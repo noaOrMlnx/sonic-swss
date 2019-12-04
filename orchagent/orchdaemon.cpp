@@ -200,6 +200,11 @@ bool OrchDaemon::init()
     };
     SflowOrch *sflow_orch = new SflowOrch(m_applDb,  sflow_tables);
 
+
+    TableConnector configDBConnector(m_configDb, CFG_TX_ERROR_TABLE_NAME);
+    TableConnector stateDBConnector(m_stateDb, STATE_TX_ERROR_TABLE_NAME);
+    MonitorTXOrch *monitor_tx_orch = new MonitorTXOrch(configDBConnector, stateDBConnector);
+
     /*
      * The order of the orch list is important for state restore of warm start and
      * the queued processing in m_toSync map after gPortsOrch->allPortsReady() is set.
@@ -208,7 +213,7 @@ bool OrchDaemon::init()
      * when iterating ConsumerMap.
      * That is ensured implicitly by the order of map key, "LAG_TABLE" is smaller than "VLAN_TABLE" in lexicographic order.
      */
-    m_orchList = { gSwitchOrch, gCrmOrch, gBufferOrch, gPortsOrch, gIntfsOrch, gNeighOrch, gRouteOrch, copp_orch, tunnel_decap_orch, qos_orch, wm_orch, policer_orch, sflow_orch};
+    m_orchList = { gSwitchOrch, gCrmOrch, gBufferOrch, gPortsOrch, gIntfsOrch, gNeighOrch, gRouteOrch, copp_orch, tunnel_decap_orch, qos_orch, wm_orch, policer_orch, sflow_orch, monitor_tx_orch};
 
 
     bool initialize_dtel = false;

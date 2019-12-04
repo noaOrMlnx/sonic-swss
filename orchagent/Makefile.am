@@ -54,7 +54,8 @@ orchagent_SOURCES = \
             watermarkorch.cpp \
             policerorch.cpp \
             sfloworch.cpp \
-            chassisorch.cpp
+            chassisorch.cpp \
+            monitorTXorch.cpp
 
 orchagent_SOURCES += flex_counter/flex_counter_manager.cpp flex_counter/flex_counter_stat_manager.cpp
 

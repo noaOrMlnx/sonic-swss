@@ -29,6 +29,7 @@
 #include "policerorch.h"
 #include "sfloworch.h"
 #include "directory.h"
+#include "monitorTXorch.h"
 
 using namespace swss;
 
