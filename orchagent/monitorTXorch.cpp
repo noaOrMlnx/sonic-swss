@@ -1,6 +1,7 @@
 
 #include <sstream>
 #include <inttypes.h>
+#include <string>
 
 #include "converter.h"
 #include "monitorTXorch.h"
@@ -31,16 +32,27 @@ MonitorTXOrch::MonitorTXOrch(TableConnector configDBTConnector, TableConnector s
     m_countersDB(new DBConnector(COUNTERS_DB, DBConnector::DEFAULT_UNIXSOCKET, 0)),
     m_countersTable(new Table(m_countersDB.get(), "COUNTERS")),
     m_countersPortNameMap(new Table(m_countersDB.get(), COUNTERS_PORT_NAME_MAP)),
-    // connector to state db
-    m_stateTxErrTable(stateDBTConnector.first, stateDBTConnector.second)
+    m_stateTxErrTable(stateDBTConnector.first, stateDBTConnector.second),
+    m_txErrConfigTable(configDBTConnector.first, configDBTConnector.second)
 
 {
     initTimer();
+    setDefaultConfigParam();
 }
 
 MonitorTXOrch::~MonitorTXOrch(void) 
 {
     SWSS_LOG_ENTER();
+}
+
+void MonitorTXOrch::setDefaultConfigParam()
+{
+    vector<FieldValueTuple> fv;
+    fv.emplace_back(VALUE, to_string(m_poolingPeriod));
+    m_txErrConfigTable.set(POOLING_PERIOD_KEY, fv);
+    fv.clear();
+    fv.emplace_back(VALUE, to_string(m_threshold));
+    m_txErrConfigTable.set(THRESHOLD_KEY, fv);
 }
 
 bool MonitorTXOrch::createPortNameMap() 

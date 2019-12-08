@@ -47,6 +47,7 @@ class MonitorTXOrch : public Orch
         shared_ptr<Table> m_countersPortNameMap = nullptr;
         // state table
         Table m_stateTxErrTable;
+        Table m_txErrConfigTable;
         // map<sai_object_id_t, string> m_portsStringsMap;
         map<string, string> m_portsStringsMap;
 
@@ -71,7 +72,7 @@ class MonitorTXOrch : public Orch
         void setPoolingPeriod(const vector<FieldValueTuple>& data);
         void setThreshold(const vector<FieldValueTuple>& data);
         void insertStateToDb(string portAlias, PortState state);
-
+        void setDefaultConfigParam();
 };
 
 #endif
