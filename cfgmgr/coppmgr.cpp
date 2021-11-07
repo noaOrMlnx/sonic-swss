@@ -316,18 +316,15 @@ CoppMgr::CoppMgr(DBConnector *cfgDb, DBConnector *appDb, DBConnector *stateDb, c
             trap_group_fvs.push_back(fv);
         }
 
-        if (std::find(m_coppDisabledTraps.begin(), m_coppDisabledTraps.end(), i.first) == m_coppDisabledTraps.end())
+        if (!trap_group_fvs.empty())
         {
-            if (!trap_group_fvs.empty())
-            {
-                m_appCoppTable.set(i.first, trap_group_fvs);
-            }
-            setCoppGroupStateOk(i.first);
-            auto g_cfg = std::find(group_cfg_keys.begin(), group_cfg_keys.end(), i.first);
-            if (g_cfg != group_cfg_keys.end())
-            {
-                g_copp_init_set.insert(i.first);
-            }
+            m_appCoppTable.set(i.first, trap_group_fvs);
+        }
+        setCoppGroupStateOk(i.first);
+        auto g_cfg = std::find(group_cfg_keys.begin(), group_cfg_keys.end(), i.first);
+        if (g_cfg != group_cfg_keys.end())
+        {
+            g_copp_init_set.insert(i.first);
         }
     }
 }
@@ -484,17 +481,8 @@ void CoppMgr::doCoppTrapTask(Consumer &consumer)
             {
                 if (conf_present)
                 {
-                    removeTrap(key);
+                    removeTrap(key, trap_ids, fvs);
                     setCoppTrapStateOk(key);
-                    getTrapGroupTrapIds(m_coppTrapConfMap[key].trap_group, trap_ids);
-                    fvs.clear();
-                    FieldValueTuple fv(COPP_TRAP_ID_LIST_FIELD, trap_ids);
-                    fvs.push_back(fv);
-                    if (!checkTrapGroupPending(m_coppTrapConfMap[key].trap_group))
-                    {
-                        m_appCoppTable.set(m_coppTrapConfMap[key].trap_group, fvs);
-                        setCoppGroupStateOk(m_coppTrapConfMap[key].trap_group);
-                    }
                     m_coppTrapConfMap.erase(key);
                 }
                 it = consumer.m_toSync.erase(it);
@@ -784,6 +772,7 @@ void CoppMgr::doCoppGroupTask(Consumer &consumer)
 
 void CoppMgr::doFeatureTask(Consumer &consumer)
 {
+    // TODO add the new feature table cache
     auto it = consumer.m_toSync.begin();
     while (it != consumer.m_toSync.end())
     {
