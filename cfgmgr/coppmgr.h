@@ -14,6 +14,7 @@ namespace swss {
 /* COPP Trap Table Fields */
 #define COPP_TRAP_ID_LIST_FIELD                "trap_ids"
 #define COPP_TRAP_GROUP_FIELD                  "trap_group"
+#define COPP_ALWAYS_ENABLED_FIELD              "always_enabled"
 
 /* COPP Group Table Fields */
 #define COPP_GROUP_QUEUE_FIELD                 "queue"
@@ -42,6 +43,7 @@ struct CoppTrapConf
 {
     std::string         trap_ids;
     std::string         trap_group;
+    std::string         is_always_enabled;
 };
 
 /* TrapName to TrapConf map  */
@@ -71,13 +73,10 @@ private:
     CoppTrapIdTrapGroupMap m_coppTrapIdTrapGroupMap;
     CoppGroupFvs           m_coppGroupFvs;
     std::set<std::string>  m_coppDisabledTraps;
+    std::set<std::string>  m_coppAlwaysEnabledTraps;
     CoppCfg                m_coppGroupInitCfg;
     CoppCfg                m_coppTrapInitCfg;
-<<<<<<< HEAD
     CoppCfg                m_featuresCfgTable;
-=======
-    CoppCfg                m_featuresTableCache;
->>>>>>> 37df59f... Fix CR comments
 
 
     void doTask(Consumer &consumer);
@@ -105,7 +104,6 @@ private:
 
     void removeTrap(std::string key);
     void addTrap(std::string trap_ids, std::string trap_group);
-
 };
 
 }
