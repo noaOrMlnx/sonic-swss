@@ -261,6 +261,7 @@ CoppMgr::CoppMgr(DBConnector *cfgDb, DBConnector *appDb, DBConnector *stateDb, c
     {
         std::vector<FieldValueTuple> feature_fvs;
         m_cfgFeatureTable.get(i, feature_fvs);
+        m_featuresTableCache.emplace(i, feature_fvs);
 
         for (auto j: feature_fvs)
         {
@@ -322,12 +323,12 @@ CoppMgr::CoppMgr(DBConnector *cfgDb, DBConnector *appDb, DBConnector *stateDb, c
 
         if (!trap_group.empty() && !trap_ids.empty())
         {
+            addTrapIdsToTrapGroup(trap_group, trap_ids);
+            m_coppTrapConfMap[i.first].trap_group = trap_group;
+            m_coppTrapConfMap[i.first].trap_ids = trap_ids;
+            m_coppTrapConfMap[i.first].is_always_enabled = is_always_enabled;
             if (std::find(m_coppDisabledTraps.begin(), m_coppDisabledTraps.end(), i.first) == m_coppDisabledTraps.end())
             {
-                addTrapIdsToTrapGroup(trap_group, trap_ids);
-                m_coppTrapConfMap[i.first].trap_group = trap_group;
-                m_coppTrapConfMap[i.first].trap_ids = trap_ids;
-                m_coppTrapConfMap[i.first].is_always_enabled = is_always_enabled;
                 setCoppTrapStateOk(i.first);
             }
         }
@@ -356,18 +357,15 @@ CoppMgr::CoppMgr(DBConnector *cfgDb, DBConnector *appDb, DBConnector *stateDb, c
             trap_group_fvs.push_back(fv);
         }
 
-        if (std::find(m_coppDisabledTraps.begin(), m_coppDisabledTraps.end(), i.first) == m_coppDisabledTraps.end())
+        if (!trap_group_fvs.empty())
         {
-            if (!trap_group_fvs.empty())
-            {
-                m_appCoppTable.set(i.first, trap_group_fvs);
-            }
-            setCoppGroupStateOk(i.first);
-            auto g_cfg = std::find(group_cfg_keys.begin(), group_cfg_keys.end(), i.first);
-            if (g_cfg != group_cfg_keys.end())
-            {
-                g_copp_init_set.insert(i.first);
-            }
+            m_appCoppTable.set(i.first, trap_group_fvs);
+        }
+        setCoppGroupStateOk(i.first);
+        auto g_cfg = std::find(group_cfg_keys.begin(), group_cfg_keys.end(), i.first);
+        if (g_cfg != group_cfg_keys.end())
+        {
+            g_copp_init_set.insert(i.first);
         }
     }
 }
@@ -454,7 +452,6 @@ void CoppMgr::removeTrap(std::string key, std::string trap_ids, std::vector<Fiel
 {
     removeTrapIdsFromTrapGroup(m_coppTrapConfMap[key].trap_group, m_coppTrapConfMap[key].trap_ids);
     trap_ids.clear();
-    setCoppTrapStateOk(key);
     getTrapGroupTrapIds(m_coppTrapConfMap[key].trap_group, trap_ids);
     fvs.clear();
     FieldValueTuple fv(COPP_TRAP_ID_LIST_FIELD, trap_ids);
@@ -466,8 +463,9 @@ void CoppMgr::removeTrap(std::string key, std::string trap_ids, std::vector<Fiel
     }
 }
 
-void CoppMgr::addTrap(std::vector<FieldValueTuple> fvs, std::string trap_ids, std::string trap_group, std::string is_always_enabled, std::string trap_group_trap_ids)
+void CoppMgr::addTrap(std::vector<FieldValueTuple> fvs, std::string trap_ids, std::string trap_group)
 {
+    string trap_group_trap_ids;
     fvs.clear();
     addTrapIdsToTrapGroup(trap_group, trap_ids);
     getTrapGroupTrapIds(trap_group, trap_group_trap_ids);
@@ -538,6 +536,7 @@ void CoppMgr::doCoppTrapTask(Consumer &consumer)
                 if (conf_present)
                 {
                     removeTrap(key, trap_ids, fvs);
+                    setCoppTrapStateOk(key);
                     m_coppTrapConfMap.erase(key);
                 }
                 it = consumer.m_toSync.erase(it);
@@ -548,8 +547,8 @@ void CoppMgr::doCoppTrapTask(Consumer &consumer)
                 (trap_group == m_coppTrapConfMap[key].trap_group) &&
                 (trap_ids == m_coppTrapConfMap[key].trap_ids))
             {
-                std::vector<std::string> feature_keys;
-                m_cfgFeatureTable.getKeys(feature_keys);
+                // std::vector<std::string> feature_keys;
+                // m_cfgFeatureTable.getKeys(feature_keys);
                 std::vector<FieldValueTuple> feature_fvs;
                 /* duplicate check for the always_enabled field */
                 if (!m_coppTrapConfMap[key].is_always_enabled.empty() && (is_always_enabled == m_coppTrapConfMap[key].is_always_enabled))
@@ -567,8 +566,7 @@ void CoppMgr::doCoppTrapTask(Consumer &consumer)
 
                     if (m_coppTrapConfMap.find(key) == m_coppTrapConfMap.end())
                     {
-                        string trap_group_trap_ids;
-                        addTrap(fvs, trap_ids, trap_group, is_always_enabled, trap_group_trap_ids);
+                        addTrap(fvs, trap_ids, trap_group);
                     }
                 }
                 else
@@ -579,9 +577,10 @@ void CoppMgr::doCoppTrapTask(Consumer &consumer)
 
                     m_coppAlwaysEnabledTraps.erase(key);
 
-                    if (std::find(feature_keys.begin(), feature_keys.end(), key) != feature_keys.end())
+                    auto it = m_featuresTableCache.find(key);
+                    if (it != m_featuresTableCache.end())
                     {
-                        m_cfgFeatureTable.get(key, feature_fvs);
+                        feature_fvs = m_featuresTableCache[key];
                         for (auto i: feature_fvs)
                         {
                             if (fvField(i) == "state" && fvValue(i) == "enabled")
@@ -591,7 +590,9 @@ void CoppMgr::doCoppTrapTask(Consumer &consumer)
                             }
                         }
                     }
+
                     removeTrap(key, trap_ids, fvs);
+                    delCoppTrapStateOk(key);
                     m_coppTrapConfMap.erase(key);
                     m_coppDisabledTraps.insert(key);
                 }
@@ -613,8 +614,7 @@ void CoppMgr::doCoppTrapTask(Consumer &consumer)
                 removeTrapIdsFromTrapGroup(m_coppTrapConfMap[key].trap_group,
                                            m_coppTrapConfMap[key].trap_ids);
             }
-            string trap_group_trap_ids;
-            addTrap(fvs, trap_ids, trap_group, is_always_enabled, trap_group_trap_ids);
+            addTrap(fvs, trap_ids, trap_group);
 
             /* When the trap table's trap group is changed, the old trap group
              * should also be reprogrammed as some of its associated traps got
@@ -825,6 +825,7 @@ void CoppMgr::doCoppGroupTask(Consumer &consumer)
 
 void CoppMgr::doFeatureTask(Consumer &consumer)
 {
+    // TODO add the new feature table cache
     auto it = consumer.m_toSync.begin();
     while (it != consumer.m_toSync.end())
     {
