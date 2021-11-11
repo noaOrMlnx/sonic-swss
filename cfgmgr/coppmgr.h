@@ -76,6 +76,7 @@ private:
     std::set<std::string>  m_coppAlwaysEnabledTraps;
     CoppCfg                m_coppGroupInitCfg;
     CoppCfg                m_coppTrapInitCfg;
+    CoppCfg                m_featuresTableCache;
 
 
     void doTask(Consumer &consumer);
@@ -102,7 +103,7 @@ private:
     void mergeConfig(CoppCfg &init_cfg, CoppCfg &m_cfg, std::vector<std::string> &cfg_keys, Table &cfgTable);
 
     void removeTrap(std::string key, std::string trap_ids, std::vector<FieldValueTuple> fvs);
-    void addTrap(std::vector<FieldValueTuple> fvs, std::string trap_ids, std::string trap_group, std::string is_always_enabled, std::string trap_group_trap_ids);
+    void addTrap(std::vector<FieldValueTuple> fvs, std::string trap_ids, std::string trap_group);
 
 };
 
