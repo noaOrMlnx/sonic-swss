@@ -73,7 +73,11 @@ private:
     std::set<std::string>  m_coppDisabledTraps;
     CoppCfg                m_coppGroupInitCfg;
     CoppCfg                m_coppTrapInitCfg;
+<<<<<<< HEAD
     CoppCfg                m_featuresCfgTable;
+=======
+    CoppCfg                m_featuresTableCache;
+>>>>>>> 37df59f... Fix CR comments
 
 
     void doTask(Consumer &consumer);
