@@ -73,7 +73,8 @@ private:
     std::set<std::string>  m_coppDisabledTraps;
     CoppCfg                m_coppGroupInitCfg;
     CoppCfg                m_coppTrapInitCfg;
-    
+    CoppCfg                m_featuresCfgTable;
+
 
     void doTask(Consumer &consumer);
     void doCoppGroupTask(Consumer &consumer);
@@ -97,6 +98,9 @@ private:
     void parseInitFile(void);
     bool isTrapGroupInstalled(std::string key);
     void mergeConfig(CoppCfg &init_cfg, CoppCfg &m_cfg, std::vector<std::string> &cfg_keys, Table &cfgTable);
+
+    void removeTrap(std::string key);
+    void addTrap(std::string trap_ids, std::string trap_group);
 
 };
 
