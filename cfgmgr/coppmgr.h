@@ -73,7 +73,6 @@ private:
     CoppTrapIdTrapGroupMap m_coppTrapIdTrapGroupMap;
     CoppGroupFvs           m_coppGroupFvs;
     std::set<std::string>  m_coppDisabledTraps;
-    std::set<std::string>  m_coppAlwaysEnabledTraps;
     CoppCfg                m_coppGroupInitCfg;
     CoppCfg                m_coppTrapInitCfg;
     CoppCfg                m_featuresCfgTable;

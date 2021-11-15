@@ -98,7 +98,7 @@ void CoppMgr::setFeatureTrapIdsStatus(string feature, bool enable)
 
     if (!enable)
     {
-        if (m_coppAlwaysEnabledTraps.find(feature) == m_coppAlwaysEnabledTraps.end())
+        if (m_coppTrapConfMap[feature].is_always_enabled != "true")
         {
             m_coppDisabledTraps.insert(feature);
         }
@@ -282,8 +282,6 @@ CoppMgr::CoppMgr(DBConnector *cfgDb, DBConnector *appDb, DBConnector *stateDb, c
         if (std::find(trap_info.begin(), trap_info.end(), FieldValueTuple("always_enabled", "true")) != trap_info.end())
         {
             always_enabled = true;
-            m_coppAlwaysEnabledTraps.insert(trap_name);
-
             if (std::find(m_coppDisabledTraps.begin(), m_coppDisabledTraps.end(), trap_name) != m_coppDisabledTraps.end())
             {
                 m_coppDisabledTraps.erase(trap_name);
@@ -357,18 +355,15 @@ CoppMgr::CoppMgr(DBConnector *cfgDb, DBConnector *appDb, DBConnector *stateDb, c
             trap_group_fvs.push_back(fv);
         }
 
-        if (std::find(m_coppDisabledTraps.begin(), m_coppDisabledTraps.end(), i.first) == m_coppDisabledTraps.end())
+        if (!trap_group_fvs.empty())
         {
-            if (!trap_group_fvs.empty())
-            {
-                m_appCoppTable.set(i.first, trap_group_fvs);
-            }
-            setCoppGroupStateOk(i.first);
-            auto g_cfg = std::find(group_cfg_keys.begin(), group_cfg_keys.end(), i.first);
-            if (g_cfg != group_cfg_keys.end())
-            {
-                g_copp_init_set.insert(i.first);
-            }
+            m_appCoppTable.set(i.first, trap_group_fvs);
+        }
+        setCoppGroupStateOk(i.first);
+        auto g_cfg = std::find(group_cfg_keys.begin(), group_cfg_keys.end(), i.first);
+        if (g_cfg != group_cfg_keys.end())
+        {
+            g_copp_init_set.insert(i.first);
         }
     }
 }
@@ -576,7 +571,6 @@ void CoppMgr::doCoppTrapTask(Consumer &consumer)
                     if the trap is not installed, install it.
                     otherwise, do nothing. */
 
-                    m_coppAlwaysEnabledTraps.insert(key);
                     if (m_coppTrapConfMap.find(key) == m_coppTrapConfMap.end())
                     {
                         addTrap(trap_ids, trap_group);
@@ -587,7 +581,6 @@ void CoppMgr::doCoppTrapTask(Consumer &consumer)
                     /* if the value was changed from true to false,
                     check if there is a feature enabled.
                     if no, remove the trap. is yes, do nothing. */
-                    m_coppAlwaysEnabledTraps.erase(key);
 
                     if (m_featuresCfgTable.find(key) != m_featuresCfgTable.end())
                     {
