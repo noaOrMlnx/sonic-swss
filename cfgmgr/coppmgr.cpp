@@ -96,6 +96,35 @@ void CoppMgr::setFeatureTrapIdsStatus(string feature, bool enable)
     string trap_group = m_coppTrapConfMap[feature].trap_group;
     bool prev_group_state = checkTrapGroupPending(trap_group);
 
+    // update cache here
+    auto state = "disabled";
+    if (enable)
+    {
+        state = "enabled";
+    }
+    auto vect = m_featuresCfgTable[feature];
+    if (m_featuresCfgTable.find(feature) != m_featuresCfgTable.end())
+    {
+        for (long unsigned int i=0; i < vect.size(); i++)
+        {
+            if (vect[i].first == "state")
+            {
+                vect[i].second = state;
+            }
+        }
+
+        // for (auto v : vect)
+        // {
+        //     if (v.first == "state")
+        //     {
+        //         v.second = state;
+        //         break;
+        //     }
+        // }
+        // vect.push_back(std::make_pair("state", state));
+        m_featuresCfgTable.at(feature) = vect;
+    }
+
     if (!enable)
     {
         if (m_coppAlwaysEnabledTraps.find(feature) == m_coppAlwaysEnabledTraps.end())
@@ -148,22 +177,50 @@ void CoppMgr::setFeatureTrapIdsStatus(string feature, bool enable)
 
 bool CoppMgr::isTrapIdDisabled(string trap_id)
 {
-    for (auto &m: m_coppDisabledTraps)
+    // noa
+    // Check if this trap_id has always_enabled:true
+    string trap_name;
+    for (auto &t: m_coppTrapConfMap)
     {
-        if (m_coppTrapConfMap.find(m) == m_coppTrapConfMap.end())
+        if (m_coppTrapConfMap[t.first].trap_ids.find(trap_id) != string::npos)
         {
-            continue;
+            trap_name = t.first;
+            if (m_coppTrapConfMap[t.first].is_always_enabled == "true")
+            {
+                return false;
+            }
+            break;
         }
-        vector<string> trap_id_list;
-
-        trap_id_list = tokenize(m_coppTrapConfMap[m].trap_ids, list_item_delimiter);
-        if(std::find(trap_id_list.begin(), trap_id_list.end(), trap_id) != trap_id_list.end())
-        {
-            return true;
-        }
-
     }
-    return false;
+
+    if (m_featuresCfgTable.find(trap_name) != m_featuresCfgTable.end())
+    {
+        std::vector<FieldValueTuple> feature_fvs = m_featuresCfgTable[trap_name];
+        for (auto i: feature_fvs)
+        {
+            if (fvField(i) == "state" && fvValue(i) == "enabled")
+            {
+                return false;
+            }
+        }
+    }
+    return true;
+    // for (auto &m: m_coppDisabledTraps)
+    // {
+    //     if (m_coppTrapConfMap.find(m) == m_coppTrapConfMap.end())
+    //     {
+    //         continue;
+    //     }
+    //     vector<string> trap_id_list;
+
+    //     trap_id_list = tokenize(m_coppTrapConfMap[m].trap_ids, list_item_delimiter);
+    //     if(std::find(trap_id_list.begin(), trap_id_list.end(), trap_id) != trap_id_list.end())
+    //     {
+    //         return true;
+    //     }
+
+    // }
+    // return false;
 }
 
 void CoppMgr::mergeConfig(CoppCfg &init_cfg, CoppCfg &m_cfg, std::vector<std::string> &cfg_keys, Table &cfgTable)
@@ -846,7 +903,10 @@ void CoppMgr::doFeatureTask(Consumer &consumer)
 
         if (op == SET_COMMAND)
         {
-            m_featuresCfgTable.emplace(key, kfvFieldsValues(t));
+            if (m_featuresCfgTable.find(key) == m_featuresCfgTable.end())
+            {
+                m_featuresCfgTable.emplace(key, kfvFieldsValues(t));
+            }
             for (auto i : kfvFieldsValues(t))
             {
                 if (fvField(i) == "state")
