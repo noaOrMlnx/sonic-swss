@@ -432,6 +432,11 @@ class TestCopp(object):
                     self.validate_trap_group(key,trap_group)
                     break
             if trap_id not in disabled_traps:
+
+                # Teardown
+                fvs = swsscommon.FieldValuePairs([("trap_group", "queue4_group1")])
+                self.trap_ctbl.set("bgp", fvs)
+
                 assert trap_found == True
 
     def test_trap_ids_set(self, dvs, testlog):
@@ -605,7 +610,7 @@ class TestCopp(object):
         fvs = swsscommon.FieldValuePairs(list_val)
         self.trap_group_ctbl.set("queue5_group1", fvs)
         traps = "igmp_v1_report"
-        t_fvs = swsscommon.FieldValuePairs([("trap_group", "queue5_group1"),("trap_ids", "igmp_v1_report")])
+        t_fvs = swsscommon.FieldValuePairs([("trap_group", "queue5_group1"),("trap_ids", "igmp_v1_report"),("always_enabled", "true")])
         self.trap_ctbl.set(traps, t_fvs)
         for c_trap in copp_trap:
             trap_info = copp_trap[c_trap]
@@ -644,7 +649,7 @@ class TestCopp(object):
         fvs = swsscommon.FieldValuePairs(list_val)
         self.trap_group_ctbl.set("queue5_group1", fvs)
         traps = "igmp_v1_report"
-        t_fvs = swsscommon.FieldValuePairs([("trap_group", "queue5_group1"),("trap_ids", "igmp_v1_report")])
+        t_fvs = swsscommon.FieldValuePairs([("trap_group", "queue5_group1"),("trap_ids", "igmp_v1_report"),("always_enabled", "true")])
         self.trap_ctbl.set(traps, t_fvs)
         for c_trap in copp_trap:
             trap_info = copp_trap[c_trap]
