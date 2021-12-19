@@ -96,7 +96,7 @@ void CoppMgr::setFeatureTrapIdsStatus(string feature, bool enable)
     string trap_group = m_coppTrapConfMap[feature].trap_group;
     bool prev_group_state = checkTrapGroupPending(trap_group);
 
-        // update cache here
+    // update features cache
     auto state = "disabled";
     if (enable)
     {
@@ -167,6 +167,7 @@ void CoppMgr::setFeatureTrapIdsStatus(string feature, bool enable)
 
 bool CoppMgr::isTrapIdDisabled(string trap_id)
 {
+    // check if trap is always_enabled
     string trap_name;
     for (auto &t: m_coppTrapConfMap)
     {
@@ -178,6 +179,22 @@ bool CoppMgr::isTrapIdDisabled(string trap_id)
                 return false;
             }
             break;
+        }
+    }
+
+    for (auto &t: m_coppDeletedTrapConfMap)
+    {
+        if (m_coppDeletedTrapConfMap[t.first].trap_ids.find(trap_id) != string::npos)
+        {
+            trap_name = t.first;
+            if (m_coppTrapConfMap.find(trap_name) != m_coppTrapConfMap.end())
+            {
+                if (m_coppTrapConfMap[trap_name].is_always_enabled == "true")
+                {
+                    return false;
+                }
+                break;
+            }
         }
     }
 
@@ -193,22 +210,6 @@ bool CoppMgr::isTrapIdDisabled(string trap_id)
         }
     }
     return true;
-    // for (auto &m: m_coppDisabledTraps)
-    // {
-    //     if (m_coppTrapConfMap.find(m) == m_coppTrapConfMap.end())
-    //     {
-    //         continue;
-    //     }
-    //     vector<string> trap_id_list;
-
-    //     trap_id_list = tokenize(m_coppTrapConfMap[m].trap_ids, list_item_delimiter);
-    //     if(std::find(trap_id_list.begin(), trap_id_list.end(), trap_id) != trap_id_list.end())
-    //     {
-    //         return true;
-    //     }
-
-    // }
-    // return false;
 }
 
 void CoppMgr::mergeConfig(CoppCfg &init_cfg, CoppCfg &m_cfg, std::vector<std::string> &cfg_keys, Table &cfgTable)
@@ -469,8 +470,8 @@ void CoppMgr::removeTrapIdsFromTrapGroup(string trap_group, string trap_ids)
 
 void CoppMgr::getTrapGroupTrapIds(string trap_group, string &trap_ids)
 {
-
     trap_ids.clear();
+    // maybe with i = 0
     for (auto it: m_coppTrapIdTrapGroupMap)
     {
         if (it.second == trap_group)
@@ -580,6 +581,12 @@ void CoppMgr::doCoppTrapTask(Consumer &consumer)
                 {
                     removeTrap(key);
                     setCoppTrapStateOk(key);
+
+                    m_coppDeletedTrapConfMap[key] = m_coppTrapConfMap[key];
+
+                    // instead of earse, we will remove trap_group and trap_ids and put it in the deleted conf map.
+                    // then, if trap_ids & group are empty, we will check for is_always_enabled. if it's not empty and
+                    // different from exsiting one and = true - we need to install it using deletedTrapconfmap.
                     m_coppTrapConfMap.erase(key);
                 }
                 it = consumer.m_toSync.erase(it);
@@ -600,10 +607,85 @@ void CoppMgr::doCoppTrapTask(Consumer &consumer)
              */
             if (trap_group.empty() || trap_ids.empty())
             {
-                it = consumer.m_toSync.erase(it);
-                continue;
-            }
+                if (is_always_enabled.empty())
+                {
+                    it = consumer.m_toSync.erase(it);
+                    continue;
+                }
 
+                if (is_always_enabled != m_coppTrapConfMap[key].is_always_enabled)
+                {
+                    m_coppTrapConfMap[key].is_always_enabled = is_always_enabled;
+                    if (is_always_enabled == "true")
+                    {
+                        // if trap is not installed and have info in deleted map
+                        if (m_coppDeletedTrapConfMap.find(key) != m_coppDeletedTrapConfMap.end())
+                        {
+                            addTrap(m_coppDeletedTrapConfMap[key].trap_ids, m_coppDeletedTrapConfMap[key].trap_group);
+                        }
+                            // else if it has info in the init cfg map
+                        else if (m_coppTrapInitCfg.find(key) != m_coppTrapInitCfg.end())
+                        {
+                            auto fvs = m_coppTrapInitCfg[key];
+                            string init_trap_ids = "";
+                            string init_trap_group = "";
+                            for (auto i: fvs)
+                            {
+                                if (fvField(i) == COPP_TRAP_GROUP_FIELD)
+                                {
+                                    init_trap_group = fvValue(i);
+                                }
+                                else if (fvField(i) == COPP_TRAP_ID_LIST_FIELD)
+                                {
+                                    init_trap_ids = fvValue(i);
+                                }
+                            }
+                            addTrap(init_trap_ids, init_trap_group);
+                        }
+                        // }
+                    }
+                    else
+                    {
+                        /* if the value was changed from true to false,
+                        check if there is a feature enabled.
+                        if no, remove the trap. is yes, do nothing. */
+
+                        // change the value in m_coppTrapConfMap
+                        m_coppTrapConfMap[key].is_always_enabled = is_always_enabled;
+                        if (m_featuresCfgTable.find(key) != m_featuresCfgTable.end())
+                        {
+                            bool isEnabled {false};
+                            auto feature_fvs = m_featuresCfgTable[key];
+                            for (auto i: feature_fvs)
+                            {
+                                if (fvField(i) == "state" && fvValue(i) == "enabled")
+                                {
+                                    isEnabled = true;
+                                    it = consumer.m_toSync.erase(it);
+                                    continue;
+                                }
+                            }
+                            if (isEnabled)
+                            {
+                                it = consumer.m_toSync.erase(it);
+                                continue;
+                            }
+                        }
+
+                        removeTrap(key);
+                        delCoppTrapStateOk(key);
+
+                        m_coppDeletedTrapConfMap[key] = m_coppTrapConfMap[key];
+                        m_coppDeletedTrapConfMap[key].is_always_enabled = m_coppTrapConfMap[key].is_always_enabled;
+                        m_coppTrapConfMap[key].trap_group = "";
+                        m_coppTrapConfMap[key].trap_ids = "";
+                        // m_coppTrapConfMap.erase(key);
+                        m_coppDisabledTraps.insert(key);
+                    }
+                    it = consumer.m_toSync.erase(it);
+                    continue;
+                }
+            }
             /* if always_enabled field has been changed */
             if (conf_present &&
                 (trap_group == m_coppTrapConfMap[key].trap_group) &&
@@ -615,17 +697,19 @@ void CoppMgr::doCoppTrapTask(Consumer &consumer)
                     /* if the value was changed from false to true,
                     if the trap is not installed, install it.
                     otherwise, do nothing. */
-                    // noa TODO chnage it here
-                    // if (conf_present)
-                    // {
-                    //     removeTrapIdsFromTrapGroup(m_coppTrapConfMap[key].trap_group, m_coppTrapConfMap[key].trap_ids);
-                    // }
-                    // addTrap(trap_ids, trap_group);
+
+
                     if (m_coppTrapConfMap.find(key) == m_coppTrapConfMap.end())
                     {
                         addTrap(trap_ids, trap_group);
                     }
-                    // continue;
+                    else
+                    {
+                        m_coppTrapConfMap[key].is_always_enabled = is_always_enabled;
+                    }
+
+                    it = consumer.m_toSync.erase(it);
+                    continue;
                 }
                 else
                 {
@@ -633,6 +717,8 @@ void CoppMgr::doCoppTrapTask(Consumer &consumer)
                     check if there is a feature enabled.
                     if no, remove the trap. is yes, do nothing. */
 
+                    // change the value in m_coppTrapConfMap
+                    m_coppTrapConfMap[key].is_always_enabled = is_always_enabled;
                     if (m_featuresCfgTable.find(key) != m_featuresCfgTable.end())
                     {
                         // change the value in m_coppTrapConfMap
@@ -651,16 +737,22 @@ void CoppMgr::doCoppTrapTask(Consumer &consumer)
                         }
                         if (isEnabled)
                         {
+                            it = consumer.m_toSync.erase(it);
                             continue;
                         }
                     }
 
                     removeTrap(key);
                     delCoppTrapStateOk(key);
-                    // m_coppTrapConfMap[key].is_always_enabled = is_always_enabled;
-                    m_coppTrapConfMap.erase(key);
+
+                    m_coppDeletedTrapConfMap[key] = m_coppTrapConfMap[key];
+                    m_coppDeletedTrapConfMap[key].is_always_enabled = m_coppTrapConfMap[key].is_always_enabled;
+                    m_coppTrapConfMap[key].trap_group = "";
+                    m_coppTrapConfMap[key].trap_ids = "";
+                    // m_coppTrapConfMap.erase(key);
                     m_coppDisabledTraps.insert(key);
                 }
+                it = consumer.m_toSync.erase(it);
                 continue;
             }
 
@@ -672,6 +764,10 @@ void CoppMgr::doCoppTrapTask(Consumer &consumer)
                 removeTrapIdsFromTrapGroup(m_coppTrapConfMap[key].trap_group,
                                            m_coppTrapConfMap[key].trap_ids);
             }
+
+            m_coppTrapConfMap[key].trap_group = trap_group;
+            m_coppTrapConfMap[key].trap_ids = trap_ids;
+            m_coppTrapConfMap[key].is_always_enabled = is_always_enabled;
             addTrap(trap_ids, trap_group);
 
             /* When the trap table's trap group is changed, the old trap group
@@ -698,8 +794,11 @@ void CoppMgr::doCoppTrapTask(Consumer &consumer)
         }
         else if (op == DEL_COMMAND)
         {
+            SWSS_LOG_NOTICE("NOA im inside dell command in docopptraptask");
+
             if (conf_present)
             {
+                SWSS_LOG_NOTICE("NOA conf is present. removing trap ids from trap group");
                 removeTrapIdsFromTrapGroup(m_coppTrapConfMap[key].trap_group,
                                            m_coppTrapConfMap[key].trap_ids);
             }
@@ -707,6 +806,7 @@ void CoppMgr::doCoppTrapTask(Consumer &consumer)
             trap_ids.clear();
             if (conf_present && !m_coppTrapConfMap[key].trap_group.empty())
             {
+                SWSS_LOG_NOTICE("NOA trap group is not empty in m_coppTrapConfMap");
                 getTrapGroupTrapIds(m_coppTrapConfMap[key].trap_group, trap_ids);
                 FieldValueTuple fv(COPP_TRAP_ID_LIST_FIELD, trap_ids);
                 fvs.push_back(fv);
@@ -716,8 +816,23 @@ void CoppMgr::doCoppTrapTask(Consumer &consumer)
                     setCoppGroupStateOk(m_coppTrapConfMap[key].trap_group);
                 }
             }
+            // else if (m_coppDeletedTrapConfMap.find(key) != m_coppDeletedTrapConfMap.end() && !m_coppDeletedTrapConfMap[key].trap_group.empty())
+            // {
+            //     SWSS_LOG_NOTICE("NOA trap group is not empty in m_coppDeletedTrapConfMap");
+            //     auto del_trap_group = m_coppDeletedTrapConfMap[key].trap_group;
+            //     // noa todo check what happens here!!
+            //     getTrapGroupTrapIds(del_trap_group, trap_ids);
+            //     FieldValueTuple fv(COPP_TRAP_ID_LIST_FIELD, trap_ids);
+            //     fvs.push_back(fv);
+            //     if (!checkTrapGroupPending(del_trap_group))
+            //     {
+            //         m_appCoppTable.set(del_trap_group, fvs);
+            //         setCoppGroupStateOk(del_trap_group);
+            //     }
+            // }
             if (conf_present)
             {
+                m_coppDeletedTrapConfMap[key] = m_coppTrapConfMap[key];
                 m_coppTrapConfMap.erase(key);
             }
             delCoppTrapStateOk(key);
@@ -728,6 +843,7 @@ void CoppMgr::doCoppTrapTask(Consumer &consumer)
              */
             if (m_coppTrapInitCfg.find(key) != m_coppTrapInitCfg.end())
             {
+                SWSS_LOG_NOTICE("NOA we have key in init cfg");
                 auto fvs = m_coppTrapInitCfg[key];
                 for (auto i: fvs)
                 {
@@ -744,21 +860,55 @@ void CoppMgr::doCoppTrapTask(Consumer &consumer)
                         is_always_enabled = fvValue(i);
                     }
                 }
-                vector<FieldValueTuple> g_fvs;
-                string trap_group_trap_ids;
-                addTrapIdsToTrapGroup(trap_group, trap_ids);
-                getTrapGroupTrapIds(trap_group, trap_group_trap_ids);
-                FieldValueTuple fv1(COPP_TRAP_ID_LIST_FIELD, trap_group_trap_ids);
-                g_fvs.push_back(fv1);
-                if (!checkTrapGroupPending(trap_group))
+                // vector<FieldValueTuple> g_fvs;
+                // string trap_group_trap_ids;
+                // addTrapIdsToTrapGroup(trap_group, trap_ids);
+                // // something is wrong with this function
+                // getTrapGroupTrapIds(trap_group, trap_group_trap_ids);
+                // FieldValueTuple fv1(COPP_TRAP_ID_LIST_FIELD, trap_group_trap_ids);
+                // g_fvs.push_back(fv1);
+                // if (!checkTrapGroupPending(trap_group))
+                // {
+                //     m_appCoppTable.set(trap_group, g_fvs);
+                //     setCoppGroupStateOk(trap_group);
+                // }
+
+                // if (is_always_enabled != "true")
+                // {
+                //     if (m_featuresCfgTable.find(key) != m_featuresCfgTable.end())
+                //     {
+                //         std::vector<FieldValueTuple> feature_fvs = m_featuresCfgTable[key];
+                //         for (auto i: feature_fvs)
+                //         {
+                //             if (fvField(i) == "state" && fvValue(i) != "enabled")
+                //             {
+                //                 it = consumer.m_toSync.erase(it);
+                //             }
+
+                //         }
+                //     }
+                // }
+                auto enabled {false};
+                if (m_featuresCfgTable.find(key) != m_featuresCfgTable.end())
                 {
-                    m_appCoppTable.set(trap_group, g_fvs);
-                    setCoppGroupStateOk(trap_group);
+                    std::vector<FieldValueTuple> feature_fvs = m_featuresCfgTable[key];
+                    for (auto i: feature_fvs)
+                    {
+                        if (fvField(i) == "state" && fvValue(i) != "enabled")
+                        {
+                            enabled = true;
+                        }
+                    }
                 }
-                m_coppTrapConfMap[key].trap_group = trap_group;
-                m_coppTrapConfMap[key].trap_ids = trap_ids;
-                m_coppTrapConfMap[key].is_always_enabled = is_always_enabled;
-                setCoppTrapStateOk(key);
+                // noa
+                if (is_always_enabled == "true" || enabled == true)
+                {
+                    addTrap(trap_ids, trap_group);
+                    m_coppTrapConfMap[key].trap_group = trap_group;
+                    m_coppTrapConfMap[key].trap_ids = trap_ids;
+                    m_coppTrapConfMap[key].is_always_enabled = is_always_enabled;
+                    setCoppTrapStateOk(key);
+                }
             }
         }
         it = consumer.m_toSync.erase(it);

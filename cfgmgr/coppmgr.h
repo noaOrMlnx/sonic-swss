@@ -70,6 +70,7 @@ private:
     Table                  m_stateCoppTrapTable, m_stateCoppGroupTable;
     ProducerStateTable     m_appCoppTable;
     CoppTrapConfMap        m_coppTrapConfMap;
+    CoppTrapConfMap        m_coppDeletedTrapConfMap;
     CoppTrapIdTrapGroupMap m_coppTrapIdTrapGroupMap;
     CoppGroupFvs           m_coppGroupFvs;
     std::set<std::string>  m_coppDisabledTraps;

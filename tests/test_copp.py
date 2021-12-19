@@ -797,10 +797,10 @@ class TestCopp(object):
 
     def test_disabled_feature_always_enabled_trap(self, dvs, testlog):
         self.setup_copp(dvs)
-        fvs = swsscommon.FieldValuePairs([("trap_ids", "bgp,bgpv6"), ("trap_group", "queue4_group1"), ("always_enabled", "true")])
-        self.trap_ctbl.set("bgp", fvs)
+        fvs = swsscommon.FieldValuePairs([("trap_ids", "lldp"), ("trap_group", "queue4_group3"), ("always_enabled", "true")])
+        self.trap_ctbl.set("lldp", fvs)
         fvs = swsscommon.FieldValuePairs([("state", "disabled")])
-        self.feature_tbl.set("bgp", fvs)
+        self.feature_tbl.set("lldp", fvs)
 
         time.sleep(2)
         global copp_trap
@@ -811,11 +811,11 @@ class TestCopp(object):
             trap_ids = trap_info[0].split(";")
             trap_group = trap_info[1]
 
-            if "bgp" not in trap_ids:
+            if "lldp" not in trap_ids:
                 continue
 
             trap_found = False
-            trap_type = traps_to_trap_type["bgp"]
+            trap_type = traps_to_trap_type["lldp"]
             for key in trap_keys:
                 (status, fvs) = self.trap_atbl.get(key)
                 assert status == True
@@ -829,8 +829,8 @@ class TestCopp(object):
             assert trap_found == True
 
         # change always_enabled to be false and check the trap is not installed:
-        fvs = swsscommon.FieldValuePairs([("trap_ids", "bgp,bgpv6"), ("trap_group", "queue4_group1"), ("always_enabled", "false")])
-        self.trap_ctbl.set("bgp", fvs)
+        fvs = swsscommon.FieldValuePairs([("trap_ids", "lldp"), ("trap_group", "queue4_group3"), ("always_enabled", "false")])
+        self.trap_ctbl.set("lldp", fvs)
         time.sleep(2)
 
         table_found = True
@@ -840,10 +840,10 @@ class TestCopp(object):
                 table_found = False
 
         # teardown
-        fvs = swsscommon.FieldValuePairs([("trap_ids", "bgp,bgpv6"), ("trap_group", "queue4_group1")])
-        self.trap_ctbl.set("bgp", fvs)
+        fvs = swsscommon.FieldValuePairs([("trap_ids", "lldp"), ("trap_group", "queue4_group3")])
+        self.trap_ctbl.set("lldp", fvs)
         fvs = swsscommon.FieldValuePairs([("state", "enabled")])
-        self.feature_tbl.set("bgp", fvs)
+        self.feature_tbl.set("lldp", fvs)
 
         assert table_found == False
 
