@@ -432,11 +432,6 @@ class TestCopp(object):
                     self.validate_trap_group(key,trap_group)
                     break
             if trap_id not in disabled_traps:
-
-                # Teardown
-                fvs = swsscommon.FieldValuePairs([("trap_group", "queue4_group1")])
-                self.trap_ctbl.set("bgp", fvs)
-
                 assert trap_found == True
 
     def test_trap_ids_set(self, dvs, testlog):
