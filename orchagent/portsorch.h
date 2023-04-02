@@ -74,6 +74,26 @@ struct VlanMemberUpdate
     bool add;
 };
 
+typedef struct port_attrs
+{
+	Port p;
+	string alias;
+	string admin_status;
+	string an_str;
+	string lt_str;
+	map<sai_port_serdes_attr_t, vector<uint32_t>> serdes_attr;
+	uint32_t speed;
+	string adv_speeds_str;
+	string interface_type_str;
+	string adv_interface_types_str;
+	uint32_t mtu;
+	uint16_t tpid;
+	string fec_mode;
+	string pfc_asym;
+	string learn_mode;
+} port_attrs;
+
+
 class PortsOrch : public Orch, public Subject
 {
 public:
@@ -130,7 +150,7 @@ public:
 
     bool setPortPfcWatchdogStatus(sai_object_id_t portId, uint8_t pfc_bitmask);
     bool getPortPfcWatchdogStatus(sai_object_id_t portId, uint8_t *pfc_bitmask);
-    
+
     void generateQueueMap(map<string, FlexCounterQueueStates> queuesStateVector);
     uint32_t getNumberOfPortSupportedQueueCounters(string port);
     void createPortBufferQueueCounters(const Port &port, string queues);
@@ -255,7 +275,9 @@ private:
     port_config_state_t m_portConfigState = PORT_CONFIG_MISSING;
     sai_uint32_t m_portCount;
     map<set<int>, sai_object_id_t> m_portListLaneMap;
+    vector<sai_object_id_t> m_portsToRemoveList;
     map<set<int>, tuple<string, uint32_t, int, string, int, string>> m_lanesAliasSpeedMap;
+    map<set<int>, tuple<string, uint32_t, int, string, int, string>> m_portsToAddMap;
     map<string, Port> m_portList;
     map<string, vlan_members_t> m_portVlanMember;
     /* mapping from SAI object ID to Name for faster
@@ -415,5 +437,21 @@ private:
     set<sai_object_id_t> m_macsecEnabledPorts;
 
     std::unordered_set<std::string> generateCounterStats(const string& type, bool gearbox = false);
+
+    bool m_isBulkPortCreationSupported {false};
+    bool m_isBulkPortRemovalSupported {false};
+    bool m_isBulkPortAttrSetSupported {false};
+    bool checkIfBulkSupported();
+    bool checkIfBulkRemoveSupported();
+    void initializePortsList();
+    void portTableDel();
+    void addPorts();
+    void removePorts();
+    vector<port_attrs> m_portsAttrs;
+
+    task_process_status handlePortInit(Port p, string alias, string admin_status,
+    		string an_str, string lt_str, map<sai_port_serdes_attr_t, vector<uint32_t>> serdes_attr,
+    		uint32_t speed, string adv_speeds_str, string interface_type_str, string adv_interface_types_str,
+    		uint32_t mtu, uint16_t tpid, string fec_mode, string pfc_asym, string learn_mode);
 };
 #endif /* SWSS_PORTSORCH_H */

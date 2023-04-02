@@ -444,7 +444,6 @@ PortsOrch::PortsOrch(DBConnector *db, DBConnector *stateDb, vector<table_name_wi
         SWSS_LOG_ERROR("Port flex counter groups were not set successfully: %s", e.what());
     }
 
-    uint32_t i, j;
     sai_status_t status;
     sai_attribute_t attr;
 
@@ -467,6 +466,11 @@ PortsOrch::PortsOrch(DBConnector *db, DBConnector *stateDb, vector<table_name_wi
     m_portList[m_cpuPort.m_alias] = m_cpuPort;
     m_port_ref_count[m_cpuPort.m_alias] = 0;
 
+
+    // TODO how to check if the create_ports function is not null?
+
+    m_isBulkPortCreationSupported = checkIfBulkSupported();
+
     /* Get port number */
     attr.id = SAI_SWITCH_ATTR_PORT_NUMBER;
 
@@ -482,61 +486,11 @@ PortsOrch::PortsOrch(DBConnector *db, DBConnector *stateDb, vector<table_name_wi
     }
 
     m_portCount = attr.value.u32;
-    SWSS_LOG_NOTICE("Get %d ports", m_portCount);
+    initializePortsList();
 
-    /* Get port list */
-    vector<sai_object_id_t> port_list;
-    port_list.resize(m_portCount);
-
-    attr.id = SAI_SWITCH_ATTR_PORT_LIST;
-    attr.value.objlist.count = (uint32_t)port_list.size();
-    attr.value.objlist.list = port_list.data();
-
-    status = sai_switch_api->get_switch_attribute(gSwitchId, 1, &attr);
-    if (status != SAI_STATUS_SUCCESS)
+    if (!m_isBulkPortCreationSupported)
     {
-        SWSS_LOG_ERROR("Failed to get port list, rv:%d", status);
-        task_process_status handle_status = handleSaiGetStatus(SAI_API_SWITCH, status);
-        if (handle_status != task_process_status::task_success)
-        {
-            throw runtime_error("PortsOrch initialization failure");
-        }
-    }
-
-    /* Get port hardware lane info */
-    for (i = 0; i < m_portCount; i++)
-    {
-        sai_uint32_t lanes[8] = { 0,0,0,0,0,0,0,0 };
-        attr.id = SAI_PORT_ATTR_HW_LANE_LIST;
-        attr.value.u32list.count = 8;
-        attr.value.u32list.list = lanes;
-
-        status = sai_port_api->get_port_attribute(port_list[i], 1, &attr);
-        if (status != SAI_STATUS_SUCCESS)
-        {
-            SWSS_LOG_ERROR("Failed to get hardware lane list pid:%" PRIx64, port_list[i]);
-            task_process_status handle_status = handleSaiGetStatus(SAI_API_PORT, status);
-            if (handle_status != task_process_status::task_success)
-            {
-                throw runtime_error("PortsOrch initialization failure");
-            }
-        }
-
-        set<int> tmp_lane_set;
-        for (j = 0; j < attr.value.u32list.count; j++)
-        {
-            tmp_lane_set.insert(attr.value.u32list.list[j]);
-        }
-
-        string tmp_lane_str = "";
-        for (auto s : tmp_lane_set)
-        {
-            tmp_lane_str += to_string(s) + " ";
-        }
-        tmp_lane_str = tmp_lane_str.substr(0, tmp_lane_str.size()-1);
-
-        SWSS_LOG_NOTICE("Get port with lanes pid:%" PRIx64 " lanes:%s", port_list[i], tmp_lane_str.c_str());
-        m_portListLaneMap[tmp_lane_set] = port_list[i];
+    	SWSS_LOG_NOTICE("Bulk ports creation is not supported.");
     }
 
     /* Get the flood control types and check if combined mode is supported */
@@ -631,6 +585,69 @@ PortsOrch::PortsOrch(DBConnector *db, DBConnector *stateDb, vector<table_name_wi
     Orch::addExecutor(executor);
 }
 
+void PortsOrch::initializePortsList()
+{
+    SWSS_LOG_ENTER();
+    uint32_t i, j;
+    sai_status_t status;
+    sai_attribute_t attr;
+
+    /* Get port list */
+    vector<sai_object_id_t> port_list;
+    port_list.resize(m_portCount);
+
+    attr.id = SAI_SWITCH_ATTR_PORT_LIST;
+    attr.value.objlist.count = (uint32_t)port_list.size();
+    attr.value.objlist.list = port_list.data();
+
+    status = sai_switch_api->get_switch_attribute(gSwitchId, 1, &attr);
+    if (status != SAI_STATUS_SUCCESS)
+    {
+        SWSS_LOG_ERROR("Failed to get port list, rv:%d", status);
+        task_process_status handle_status = handleSaiGetStatus(SAI_API_SWITCH, status);
+        if (handle_status != task_process_status::task_success)
+        {
+            throw runtime_error("PortsOrch initialization failure");
+        }
+    }
+
+    /* Get port hardware lane info */
+    for (i = 0; i < m_portCount; i++)
+    {
+        sai_uint32_t lanes[8] = { 0,0,0,0,0,0,0,0 };
+        attr.id = SAI_PORT_ATTR_HW_LANE_LIST;
+        attr.value.u32list.count = 8;
+        attr.value.u32list.list = lanes;
+
+        status = sai_port_api->get_port_attribute(port_list[i], 1, &attr);
+        if (status != SAI_STATUS_SUCCESS)
+        {
+            SWSS_LOG_ERROR("Failed to get hardware lane list pid:%" PRIx64, port_list[i]);
+            task_process_status handle_status = handleSaiGetStatus(SAI_API_PORT, status);
+            if (handle_status != task_process_status::task_success)
+            {
+                throw runtime_error("PortsOrch initialization failure");
+            }
+        }
+
+        set<int> tmp_lane_set;
+        for (j = 0; j < attr.value.u32list.count; j++)
+        {
+            tmp_lane_set.insert(attr.value.u32list.list[j]);
+        }
+
+        string tmp_lane_str = "";
+        for (auto s : tmp_lane_set)
+        {
+            tmp_lane_str += to_string(s) + " ";
+        }
+        tmp_lane_str = tmp_lane_str.substr(0, tmp_lane_str.size()-1);
+
+        SWSS_LOG_NOTICE("Get port with lanes pid:%" PRIx64 " lanes:%s", port_list[i], tmp_lane_str.c_str());
+        m_portListLaneMap[tmp_lane_set] = port_list[i];
+    }
+}
+
 void PortsOrch::removeDefaultVlanMembers()
 {
     /* Get VLAN members in default VLAN */
@@ -720,6 +737,41 @@ void PortsOrch::removeDefaultBridgePorts()
     }
 
     SWSS_LOG_NOTICE("Remove bridge ports from default 1Q bridge");
+}
+
+bool PortsOrch::checkIfBulkSupported()
+{
+//	vector<vector<sai_attribute_t>> portsAttributes;
+//	vector<vector<sai_attribute_t>> portsAttributes;
+//	const sai_attribute_t** portsAttributes = ;
+	vector<const sai_attribute_t*> portsAttributes;
+	vector<uint32_t> attr_counts;
+//	vector<uint32_t> attr_counts;
+	attr_counts.push_back(0);
+	vector<sai_object_id_t> ports_ids;
+	vector<sai_status_t> statuses;
+
+	sai_status_t status = sai_port_api->create_ports(gSwitchId, 0,
+		attr_counts.data(), portsAttributes.data(), SAI_BULK_OP_ERROR_MODE_STOP_ON_ERROR, ports_ids.data(), statuses.data());
+
+    if (status != SAI_STATUS_NOT_IMPLEMENTED && status != SAI_STATUS_NOT_SUPPORTED)
+    {
+    	return true;
+    }
+    return false;
+}
+
+bool PortsOrch::checkIfBulkRemoveSupported()
+{
+	vector<sai_object_id_t> ports_ids;
+	vector<sai_status_t> statuses;
+	sai_status_t status = sai_port_api->remove_ports(0, ports_ids.data(), SAI_BULK_OP_ERROR_MODE_STOP_ON_ERROR, statuses.data());
+
+	if (status != SAI_STATUS_NOT_IMPLEMENTED && status != SAI_STATUS_NOT_SUPPORTED)
+	{
+		return true;
+	}
+	return false;
 }
 
 bool PortsOrch::allPortsReady()
@@ -1065,9 +1117,9 @@ void PortsOrch::getCpuPort(Port &port)
     port = m_cpuPort;
 }
 
-/* 
- * Create host_tx_ready field in PORT_TABLE of STATE-DB 
- * and set the field to false by default for the 
+/*
+ * Create host_tx_ready field in PORT_TABLE of STATE-DB
+ * and set the field to false by default for the
  * front<Ethernet> port.
  */
 void PortsOrch::initHostTxReadyState(Port &port)
@@ -1092,7 +1144,7 @@ void PortsOrch::initHostTxReadyState(Port &port)
     if (hostTxReady.empty())
     {
         m_portStateTable.hset(port.m_alias, "host_tx_ready", "false");
-        SWSS_LOG_INFO("initalize hostTxReady %s with status %s", 
+        SWSS_LOG_INFO("initalize hostTxReady %s with status %s",
                 port.m_alias.c_str(), hostTxReady.c_str());
     }
 }
@@ -1106,13 +1158,13 @@ bool PortsOrch::setPortAdminStatus(Port &port, bool state)
     attr.value.booldata = state;
 
     /* Update the host_tx_ready to false before setting admin_state, when admin state is false */
-    if (!state) 
+    if (!state)
     {
         m_portStateTable.hset(port.m_alias, "host_tx_ready", "false");
         SWSS_LOG_INFO("Set admin status DOWN host_tx_ready to false to port pid:%" PRIx64,
                 port.m_port_id);
     }
-    
+
     sai_status_t status = sai_port_api->set_port_attribute(port.m_port_id, &attr);
     if (status != SAI_STATUS_SUCCESS)
     {
@@ -1131,14 +1183,14 @@ bool PortsOrch::setPortAdminStatus(Port &port, bool state)
     {
         m_portStateTable.hset(port.m_alias, "host_tx_ready", "false");
     }
-   
+
     /* Update the state table for host_tx_ready*/
     if (state && (gbstatus == true) && (status == SAI_STATUS_SUCCESS) )
     {
         m_portStateTable.hset(port.m_alias, "host_tx_ready", "true");
         SWSS_LOG_INFO("Set admin status UP host_tx_ready to true to port pid:%" PRIx64,
                 port.m_port_id);
-    } 
+    }
 
     return true;
 }
@@ -1372,9 +1424,9 @@ bool PortsOrch::setPortPfcWatchdogStatus(sai_object_id_t portId, uint8_t pfcwd_b
         SWSS_LOG_ERROR("Failed to get port object for port id 0x%" PRIx64, portId);
         return false;
     }
-    
+
     p.m_pfcwd_sw_bitmask = pfcwd_bitmask;
-   
+
     m_portList[p.m_alias] = p;
 
     SWSS_LOG_INFO("Set PFC watchdog port id=0x%" PRIx64 ", bitmast=0x%x", portId, pfcwd_bitmask);
@@ -1392,9 +1444,9 @@ bool PortsOrch::getPortPfcWatchdogStatus(sai_object_id_t portId, uint8_t *pfcwd_
         SWSS_LOG_ERROR("Failed to get port object for port id 0x%" PRIx64, portId);
         return false;
     }
-    
+
     *pfcwd_bitmask = p.m_pfcwd_sw_bitmask;
-    
+
     return true;
 }
 
@@ -2719,6 +2771,9 @@ bool PortsOrch::initPort(const string &alias, const string &role, const int inde
     SWSS_LOG_ENTER();
 
     /* Determine if the lane combination exists in switch */
+
+    // example: PortsOrch: Get port with lanes pid:100000000014a lanes:64 65 66 67
+
     if (m_portListLaneMap.find(lane_set) != m_portListLaneMap.end())
     {
         sai_object_id_t id = m_portListLaneMap[lane_set];
@@ -2933,6 +2988,587 @@ void PortsOrch::removePortFromPortListMap(sai_object_id_t port_id)
 }
 
 
+void PortsOrch::removePorts()
+{
+	SWSS_LOG_ENTER();
+
+
+	for (auto portId : m_portsToRemoveList)
+	{
+		Port port;
+
+		if (getPort(portId, port))
+		{
+			setPortAdminStatus(port, false);
+		}
+
+		removePortSerdesAttribute(portId);
+	}
+
+	vector<sai_status_t> statuses;
+	uint32_t portsNum = (uint32_t)m_portsToRemoveList.size();
+	sai_status_t status = sai_port_api->remove_ports(portsNum, m_portsToRemoveList.data(),
+								SAI_BULK_OP_ERROR_MODE_STOP_ON_ERROR, statuses.data());
+
+	if (status != SAI_STATUS_SUCCESS)
+	{
+		SWSS_LOG_ERROR("Failed to remove ports with bulk operation, rv:%d", status);
+
+        task_process_status handle_status = handleSaiCreateStatus(SAI_API_PORT, status);
+        if (handle_status != task_success)
+        {
+        	throw runtime_error("PortsOrch bulk ports creation failure.");
+        }
+	}
+
+	for (auto r_status : statuses)
+	{
+		if (r_status != SAI_STATUS_SUCCESS)
+		{
+			throw runtime_error("PortsOrch bulk ports creation failure.");
+		}
+	}
+}
+
+void PortsOrch::addPorts()
+{
+	// list of attributes list (equivilent to sai_attribute_t attrs[32][4];)
+	vector<vector<sai_attribute_t>> portsAttributes;
+//	portsAttributes.resize(m_portsToAddMap.size());
+
+	sai_attribute_t attr;
+	vector<sai_attribute_t> attributes;
+	vector<uint32_t> attr_counts;
+	vector<set<int>> ports_lanes;
+
+	for (auto const& it : m_portsToAddMap)
+	{
+		set<int> lanes = it.first;
+		uint32_t speed = get<1>(it.second);
+		uint32_t an_num = get<2>(it.second);
+		string fec_mode = get<3>(it.second);
+
+		ports_lanes.push_back(lanes);
+
+		vector<uint32_t> lanes_vec(lanes.begin(), lanes.end());
+
+		attr.id = SAI_PORT_ATTR_SPEED;
+		attr.value.u32 = speed;
+		attributes.push_back(attr);
+
+		attr.id = SAI_PORT_ATTR_HW_LANE_LIST;
+		attr.value.u32list.list = lanes_vec.data();
+		attr.value.u32list.count = static_cast<uint32_t>(lanes_vec.size());
+		attributes.push_back(attr);
+
+		if (an_num == true)
+		{
+			attr.id = SAI_PORT_ATTR_FEC_MODE;
+			attr.value.booldata = true;
+			attributes.push_back(attr);
+		}
+
+		if (!fec_mode.empty())
+		{
+			attr.id = SAI_PORT_ATTR_FEC_MODE;
+			attr.value.u32 = fec_mode_map[fec_mode];
+			attributes.push_back(attr);
+		}
+
+		// for each port in bulk, state how many attributes there are
+		attr_counts.push_back((uint32_t)attributes.size());
+
+		portsAttributes.push_back(attributes);
+	}
+
+	auto portsCount = (uint32_t)m_portsToAddMap.size();
+	vector<sai_object_id_t> ports_ids;
+	ports_ids.resize(portsCount);
+	vector<sai_status_t> statuses;
+
+	vector<const sai_attribute_t*> attrsList;
+
+	for (auto saiAttr: portsAttributes){
+		attrsList.push_back(saiAttr.data());
+	}
+
+	sai_status_t status = sai_port_api->create_ports(gSwitchId, portsCount,
+			attr_counts.data(), attrsList.data(), SAI_BULK_OP_ERROR_MODE_STOP_ON_ERROR, ports_ids.data(), statuses.data());
+
+	if (status != SAI_STATUS_SUCCESS)
+	{
+		SWSS_LOG_ERROR("Failed to create ports with bulk operation, rv:%d", status);
+
+        task_process_status handle_status = handleSaiCreateStatus(SAI_API_PORT, status);
+        if (handle_status != task_success)
+        {
+        	throw runtime_error("PortsOrch bulk ports creation failure.");
+        }
+	}
+
+	for (auto c_status : statuses)
+	{
+		if (c_status != SAI_STATUS_SUCCESS)
+		{
+			throw runtime_error("PortsOrch bulk ports creation failure.");
+		}
+	}
+
+	// add lanes and port id to m_portListLaneMap
+	for (long unsigned int i = 0; i < ports_lanes.size(); i++)
+	{
+		m_portListLaneMap[ports_lanes[i]] = ports_ids[i];
+	}
+
+	for (auto it = m_portsToAddMap.begin(); it != m_portsToAddMap.end();)
+	{
+		if (!initPort(get<0>(it->second), get<5>(it->second), get<4>(it->second), it->first))
+		{
+			// Failure has been recorded in initPort
+			it++;
+			continue;
+		}
+
+		initPortSupportedSpeeds(get<0>(it->second), m_portListLaneMap[it->first]);
+		initPortSupportedFecModes(get<0>(it->second), m_portListLaneMap[it->first]);
+		it++;
+	}
+}
+
+task_process_status PortsOrch::handlePortInit(Port p, string alias, string admin_status,
+		string an_str, string lt_str, map<sai_port_serdes_attr_t, vector<uint32_t>> serdes_attr,
+		uint32_t speed, string adv_speeds_str, string interface_type_str, string adv_interface_types_str,
+		uint32_t mtu, uint16_t tpid, string fec_mode, string pfc_asym, string learn_mode)
+{
+	int an = -1, lt = -1;
+	vector<uint32_t> adv_speeds, adv_interface_types;
+	sai_port_interface_type_t interface_type;
+
+	if (admin_status.empty())
+	{
+		admin_status = p.m_admin_state_up ? "up" : "down";
+	}
+
+	if (!an_str.empty())
+	{
+		if (autoneg_mode_map.find(an_str) == autoneg_mode_map.end())
+		{
+			SWSS_LOG_ERROR("Failed to parse autoneg value: %s", an_str.c_str());
+			// Invalid auto negotiation mode configured, don't retry
+			return task_failed;
+		}
+		an = autoneg_mode_map[an_str];
+		if (an != p.m_autoneg)
+		{
+			if (p.m_cap_an < 0)
+			{
+				initPortCapAutoNeg(p);
+				m_portList[alias] = p;
+			}
+			if (p.m_cap_an < 1)
+			{
+				SWSS_LOG_ERROR("%s: autoneg is not supported (cap=%d)", p.m_alias.c_str(), p.m_cap_an);
+				// autoneg is not supported, don't retry
+				return task_failed;
+			}
+			if (p.m_admin_state_up)
+			{
+				/* Bring port down before applying speed */
+				if (!setPortAdminStatus(p, false))
+				{
+					SWSS_LOG_ERROR("Failed to set port %s admin status DOWN to set port autoneg mode", alias.c_str());
+					return task_need_retry;
+				}
+
+				p.m_admin_state_up = false;
+				m_portList[alias] = p;
+			}
+
+			auto status = setPortAutoNeg(p.m_port_id, an);
+			if (status != task_success)
+			{
+				SWSS_LOG_ERROR("Failed to set port %s AN from %d to %d", alias.c_str(), p.m_autoneg, an);
+				return status;
+			}
+			SWSS_LOG_NOTICE("Set port %s AutoNeg from %d to %d", alias.c_str(), p.m_autoneg, an);
+			p.m_autoneg = static_cast<swss::Port::AutoNegMode>(an);
+			m_portList[alias] = p;
+			m_portStateTable.hdel(p.m_alias, "rmt_adv_speeds");
+			updatePortStatePoll(p, PORT_STATE_POLL_AN, (an > 0));
+		}
+	}
+
+	if (!lt_str.empty() && (p.m_type == Port::PHY))
+	{
+		if (link_training_mode_map.find(lt_str) == link_training_mode_map.end())
+		{
+			SWSS_LOG_ERROR("Failed to parse LT value: %s", lt_str.c_str());
+			// Invalid link training mode configured, don't retry
+			return task_failed;
+		}
+
+		lt = link_training_mode_map[lt_str];
+		if (lt != p.m_link_training)
+		{
+			if (p.m_cap_lt < 0)
+			{
+				initPortCapLinkTraining(p);
+				m_portList[alias] = p;
+			}
+			if (p.m_cap_lt < 1)
+			{
+				SWSS_LOG_WARN("%s: LT is not supported(cap=%d)", alias.c_str(), p.m_cap_lt);
+				// Don't retry
+				return task_failed;
+			}
+
+			auto status = setPortLinkTraining(p, lt > 0 ? true : false);
+			if (status != task_success)
+			{
+				SWSS_LOG_ERROR("Failed to set port %s LT from %d to %d", alias.c_str(), p.m_link_training, lt);
+				return status;
+			}
+			m_portStateTable.hset(alias, "link_training_status", lt_str);
+			SWSS_LOG_NOTICE("Set port %s LT from %d to %d", alias.c_str(), p.m_link_training, lt);
+			p.m_link_training = lt;
+			m_portList[alias] = p;
+			updatePortStatePoll(p, PORT_STATE_POLL_LT, (lt > 0));
+
+			// Restore pre-emphasis when LT is transitioned from ON to OFF
+			if ((p.m_link_training < 1) && (serdes_attr.size() == 0))
+			{
+				serdes_attr = p.m_preemphasis;
+			}
+		}
+	}
+
+	if (speed != 0)
+	{
+		if (speed != p.m_speed)
+		{
+			if (!isSpeedSupported(alias, p.m_port_id, speed))
+			{
+				SWSS_LOG_ERROR("Unsupported port speed %u", speed);
+				// Speed not supported, dont retry
+				return task_failed;
+			}
+
+			// for backward compatible, if p.m_autoneg != 1, toggle admin status
+			if (p.m_admin_state_up && p.m_autoneg != 1)
+			{
+				/* Bring port down before applying speed */
+				if (!setPortAdminStatus(p, false))
+				{
+					SWSS_LOG_ERROR("Failed to set port %s admin status DOWN to set speed", alias.c_str());
+					return task_need_retry;
+				}
+
+				p.m_admin_state_up = false;
+				m_portList[alias] = p;
+			}
+
+			auto status = setPortSpeed(p, speed);
+			if (status != task_success)
+			{
+				SWSS_LOG_ERROR("Failed to set port %s speed from %u to %u", alias.c_str(), p.m_speed, speed);
+				return status;
+			}
+
+			SWSS_LOG_NOTICE("Set port %s speed from %u to %u", alias.c_str(), p.m_speed, speed);
+			p.m_speed = speed;
+			m_portList[alias] = p;
+		}
+		else
+		{
+			/* Always update Gearbox speed on Gearbox ports */
+			setGearboxPortsAttr(p, SAI_PORT_ATTR_SPEED, &speed);
+		}
+	}
+
+	if (!adv_speeds_str.empty())
+	{
+		boost::to_lower(adv_speeds_str);
+		if (!getPortAdvSpeedsVal(adv_speeds_str, adv_speeds))
+		{
+			// Invalid advertised speeds configured, dont retry
+			return task_failed;
+		}
+
+		if (adv_speeds != p.m_adv_speeds)
+		{
+			if (p.m_admin_state_up && p.m_autoneg == 1)
+			{
+				/* Bring port down before applying speed */
+				if (!setPortAdminStatus(p, false))
+				{
+					SWSS_LOG_ERROR("Failed to set port %s admin status DOWN to set interface type", alias.c_str());
+					return task_need_retry;
+				}
+
+				p.m_admin_state_up = false;
+				m_portList[alias] = p;
+			}
+
+			auto ori_adv_speeds = swss::join(',', p.m_adv_speeds.begin(), p.m_adv_speeds.end());
+			auto status = setPortAdvSpeeds(p.m_port_id, adv_speeds);
+			if (status != task_success)
+			{
+
+				SWSS_LOG_ERROR("Failed to set port %s advertised speed from %s to %s", alias.c_str(),
+																					   ori_adv_speeds.c_str(),
+																					   adv_speeds_str.c_str());
+				return status;
+			}
+			SWSS_LOG_NOTICE("Set port %s advertised speed from %s to %s", alias.c_str(),
+																		  ori_adv_speeds.c_str(),
+																		  adv_speeds_str.c_str());
+			p.m_adv_speeds.swap(adv_speeds);
+			m_portList[alias] = p;
+		}
+	}
+
+	if (!interface_type_str.empty())
+	{
+		boost::to_lower(interface_type_str);
+		if (!getPortInterfaceTypeVal(interface_type_str, interface_type))
+		{
+			// Invalid interface type configured, dont retry
+			return task_failed;
+		}
+
+		if (interface_type != p.m_interface_type)
+		{
+			if (p.m_admin_state_up && p.m_autoneg == 0)
+			{
+				/* Bring port down before applying speed */
+				if (!setPortAdminStatus(p, false))
+				{
+					SWSS_LOG_ERROR("Failed to set port %s admin status DOWN to set interface type", alias.c_str());
+					return task_need_retry;
+				}
+
+				p.m_admin_state_up = false;
+				m_portList[alias] = p;
+			}
+
+			auto status = setPortInterfaceType(p.m_port_id, interface_type);
+			if (status != task_success)
+			{
+				SWSS_LOG_ERROR("Failed to set port %s interface type to %s", alias.c_str(), interface_type_str.c_str());
+				return status;
+			}
+
+			SWSS_LOG_NOTICE("Set port %s interface type to %s", alias.c_str(), interface_type_str.c_str());
+			p.m_interface_type = interface_type;
+			m_portList[alias] = p;
+		}
+	}
+
+	if (!adv_interface_types_str.empty())
+	{
+		boost::to_lower(adv_interface_types_str);
+		if (!getPortAdvInterfaceTypesVal(adv_interface_types_str, adv_interface_types))
+		{
+			// Invalid advertised interface types configured, dont retry
+			return task_failed;
+		}
+
+		if (adv_interface_types != p.m_adv_interface_types && p.m_autoneg == 1)
+		{
+			if (p.m_admin_state_up)
+			{
+				/* Bring port down before applying speed */
+				if (!setPortAdminStatus(p, false))
+				{
+					SWSS_LOG_ERROR("Failed to set port %s admin status DOWN to set interface type", alias.c_str());
+					return task_need_retry;
+				}
+
+				p.m_admin_state_up = false;
+				m_portList[alias] = p;
+			}
+
+			auto status = setPortAdvInterfaceTypes(p.m_port_id, adv_interface_types);
+			if (status != task_success)
+			{
+				SWSS_LOG_ERROR("Failed to set port %s advertised interface type to %s", alias.c_str(), adv_interface_types_str.c_str());
+				return status;
+			}
+
+			SWSS_LOG_NOTICE("Set port %s advertised interface type to %s", alias.c_str(), adv_interface_types_str.c_str());
+			p.m_adv_interface_types.swap(adv_interface_types);
+			m_portList[alias] = p;
+		}
+	}
+
+	if (mtu != 0 && mtu != p.m_mtu)
+	{
+		if (setPortMtu(p, mtu))
+		{
+			p.m_mtu = mtu;
+			m_portList[alias] = p;
+			SWSS_LOG_NOTICE("Set port %s MTU to %u", alias.c_str(), mtu);
+			if (p.m_rif_id)
+			{
+				gIntfsOrch->setRouterIntfsMtu(p);
+			}
+			// Sub interfaces inherit parent physical port mtu
+			updateChildPortsMtu(p, mtu);
+		}
+		else
+		{
+			SWSS_LOG_ERROR("Failed to set port %s MTU to %u", alias.c_str(), mtu);
+			return task_need_retry;
+		}
+	}
+
+	if (tpid != 0 && tpid != p.m_tpid)
+	{
+		SWSS_LOG_DEBUG("Set port %s TPID to 0x%x", alias.c_str(), tpid);
+		if (setPortTpid(p.m_port_id, tpid))
+		{
+			p.m_tpid = tpid;
+			m_portList[alias] = p;
+		}
+		else
+		{
+			SWSS_LOG_ERROR("Failed to set port %s TPID to 0x%x", alias.c_str(), tpid);
+			return task_need_retry;
+		}
+	}
+
+	if (!fec_mode.empty())
+	{
+		if (fec_mode_map.find(fec_mode) != fec_mode_map.end())
+		{
+			/* reset fec mode upon mode change */
+			if (!p.m_fec_cfg || p.m_fec_mode != fec_mode_map[fec_mode])
+			{
+				if (p.m_admin_state_up)
+				{
+					/* Bring port down before applying fec mode*/
+					if (!setPortAdminStatus(p, false))
+					{
+						SWSS_LOG_ERROR("Failed to set port %s admin status DOWN to set fec mode", alias.c_str());
+						return task_need_retry;
+					}
+
+					p.m_admin_state_up = false;
+					p.m_fec_mode = fec_mode_map[fec_mode];
+					p.m_fec_cfg = true;
+
+					if (setPortFec(p, fec_mode))
+					{
+						m_portList[alias] = p;
+					}
+					else
+					{
+						return task_need_retry;
+					}
+				}
+				else
+				{
+					/* Port is already down, setting fec mode*/
+					p.m_fec_mode = fec_mode_map[fec_mode];
+					p.m_fec_cfg = true;
+					if (setPortFec(p, fec_mode))
+					{
+						m_portList[alias] = p;
+					}
+					else
+					{
+						return task_need_retry;
+					}
+				}
+			}
+		}
+		else
+		{
+			SWSS_LOG_ERROR("Unknown fec mode %s", fec_mode.c_str());
+		}
+	}
+
+	if (!learn_mode.empty() && (p.m_learn_mode != learn_mode))
+	{
+		if (p.m_bridge_port_id != SAI_NULL_OBJECT_ID)
+		{
+			if(setBridgePortLearnMode(p, learn_mode))
+			{
+				p.m_learn_mode = learn_mode;
+				m_portList[alias] = p;
+				SWSS_LOG_NOTICE("Set port %s learn mode to %s", alias.c_str(), learn_mode.c_str());
+			}
+			else
+			{
+				SWSS_LOG_ERROR("Failed to set port %s learn mode to %s", alias.c_str(), learn_mode.c_str());
+				return task_need_retry;
+			}
+		}
+		else
+		{
+			p.m_learn_mode = learn_mode;
+			m_portList[alias] = p;
+
+			SWSS_LOG_NOTICE("Saved to set port %s learn mode %s", alias.c_str(), learn_mode.c_str());
+		}
+	}
+
+	if (pfc_asym != "")
+	{
+		if (setPortPfcAsym(p, pfc_asym))
+		{
+			SWSS_LOG_NOTICE("Set port %s asymmetric PFC to %s", alias.c_str(), pfc_asym.c_str());
+		}
+		else
+		{
+			SWSS_LOG_ERROR("Failed to set port %s asymmetric PFC to %s", alias.c_str(), pfc_asym.c_str());
+			return task_need_retry;
+		}
+	}
+
+	if (serdes_attr.size() != 0)
+	{
+		if (p.m_link_training > 0)
+		{
+			SWSS_LOG_NOTICE("Save port %s preemphasis for LT", alias.c_str());
+			p.m_preemphasis = serdes_attr;
+			m_portList[alias] = p;
+		}
+		else if (setPortSerdesAttribute(p.m_port_id, serdes_attr))
+		{
+			SWSS_LOG_NOTICE("Set port %s preemphasis is success", alias.c_str());
+			p.m_preemphasis = serdes_attr;
+			m_portList[alias] = p;
+		}
+		else
+		{
+			SWSS_LOG_ERROR("Failed to set port %s pre-emphasis", alias.c_str());
+			return task_need_retry;
+		}
+	}
+
+	/* create host_tx_ready field in state-db */
+	initHostTxReadyState(p);
+
+	/* Last step set port admin status */
+	if (!admin_status.empty() && (p.m_admin_state_up != (admin_status == "up")))
+	{
+		if (setPortAdminStatus(p, admin_status == "up"))
+		{
+			p.m_admin_state_up = (admin_status == "up");
+			m_portList[alias] = p;
+			SWSS_LOG_NOTICE("Set port %s admin status to %s", alias.c_str(), admin_status.c_str());
+		}
+		else
+		{
+			SWSS_LOG_ERROR("Failed to set port %s admin status to %s", alias.c_str(), admin_status.c_str());
+			return task_need_retry;
+		}
+	}
+
+	return task_success;
+}
+
 void PortsOrch::doPortTask(Consumer &consumer)
 {
     SWSS_LOG_ENTER();
@@ -2955,6 +3591,7 @@ void PortsOrch::doPortTask(Consumer &consumer)
             }
 
             m_portConfigState = PORT_CONFIG_RECEIVED;
+            // NOA TODO I think we need to put here the addPorts logic as well. why do we have 2 checks for portConfigDone?
 
             for (auto i : kfvFieldsValues(t))
             {
@@ -3003,15 +3640,11 @@ void PortsOrch::doPortTask(Consumer &consumer)
             string an_str;
             string lt_str;
             int an = -1;
-            int lt = -1;
             int index = -1;
             string role;
             string adv_speeds_str;
             string interface_type_str;
             string adv_interface_types_str;
-            vector<uint32_t> adv_speeds;
-            sai_port_interface_type_t interface_type;
-            vector<uint32_t> adv_interface_types;
             string tpid_string;
             uint16_t tpid = 0;
 
@@ -3179,58 +3812,112 @@ void PortsOrch::doPortTask(Consumer &consumer)
                 m_lanesAliasSpeedMap[lane_set] = make_tuple(alias, speed, an, fec_mode, index, role);
             }
 
-            // TODO:
-            // Fix the issue below
-            // After PortConfigDone, while waiting for "PortInitDone" and the first gBufferOrch->isPortReady(alias),
-            // the complete m_lanesAliasSpeedMap may be populated again, so initPort() will be called more than once
-            // for the same port.
 
-            /* Once all ports received, go through the each port and perform appropriate actions:
-             * 1. Remove ports which don't exist anymore
-             * 2. Create new ports
-             * 3. Initialize all ports
-             */
+
+            /* NOA TODO: after design changes, the comparison logic should be performed anyway.
+            	before this comparison logic, we will check if remove_ports is supported.
+            	if not, continue with regular remove approach. if yes, add to list and remove only when port config done.
+
+
+            	I see they still waiting for portconfig done even with prev design. !!!!!!!!!!!!!!!!
+            */
+
+
+			// TODO:
+			// Fix the issue below
+			// After PortConfigDone, while waiting for "PortInitDone" and the first gBufferOrch->isPortReady(alias),
+			// the complete m_lanesAliasSpeedMap may be populated again, so initPort() will be called more than once
+			// for the same port.
+
+			/* Once all ports received, go through the each port and perform appropriate actions:
+			 * 1. Remove ports which don't exist anymore
+			 * 2. Create new ports
+			 * 3. Initialize all ports
+			 */
+
             if (m_portConfigState == PORT_CONFIG_RECEIVED || m_portConfigState == PORT_CONFIG_DONE)
             {
-                for (auto it = m_portListLaneMap.begin(); it != m_portListLaneMap.end();)
-                {
-                    if (m_lanesAliasSpeedMap.find(it->first) == m_lanesAliasSpeedMap.end())
-                    {
-                        if (SAI_STATUS_SUCCESS != removePort(it->second))
-                        {
-                            throw runtime_error("PortsOrch initialization failure.");
-                        }
-                        it = m_portListLaneMap.erase(it);
-                    }
-                    else
-                    {
-                        it++;
-                    }
-                }
+            	if (m_isBulkPortCreationSupported)
+            	{
+            		m_isBulkPortRemovalSupported = checkIfBulkRemoveSupported();
+            	}
 
-                for (auto it = m_lanesAliasSpeedMap.begin(); it != m_lanesAliasSpeedMap.end();)
-                {
-                    if (m_portListLaneMap.find(it->first) == m_portListLaneMap.end())
-                    {
-                        if (!addPort(it->first, get<1>(it->second), get<2>(it->second), get<3>(it->second)))
-                        {
-                            throw runtime_error("PortsOrch initialization failure.");
-                        }
-                    }
+				for (auto it = m_portListLaneMap.begin(); it != m_portListLaneMap.end();)
+				{
+					// remove
+					if (m_lanesAliasSpeedMap.find(it->first) == m_lanesAliasSpeedMap.end())
+					{
 
-                    if (!initPort(get<0>(it->second), get<5>(it->second), get<4>(it->second), it->first))
-                    {
-                        // Failure has been recorded in initPort
-                        it++;
-                        continue;
-                    }
+						if (!m_isBulkPortRemovalSupported)
+						{
+							if (SAI_STATUS_SUCCESS != removePort(it->second))
+							{
+								throw runtime_error("PortsOrch initialization failure.");
+							}
+							it = m_portListLaneMap.erase(it);
+						}
+						else
+						{
+							m_portsToRemoveList.push_back(it->second);
+						}
 
-                    initPortSupportedSpeeds(get<0>(it->second), m_portListLaneMap[it->first]);
-                    initPortSupportedFecModes(get<0>(it->second), m_portListLaneMap[it->first]);
-                    it++;
-                }
+					}
+					else
+					{
+						it++;
+					}
 
-                m_portConfigState = PORT_CONFIG_DONE;
+					// add
+					for (auto it = m_lanesAliasSpeedMap.begin(); it != m_lanesAliasSpeedMap.end();)
+					{
+						if (m_portListLaneMap.find(it->first) == m_portListLaneMap.end())
+						{
+							if (!m_isBulkPortCreationSupported)
+							{
+								if (!addPort(it->first, get<1>(it->second), get<2>(it->second), get<3>(it->second)))
+								{
+									throw runtime_error("PortsOrch initialization failure.");
+								}
+
+								if (!initPort(get<0>(it->second), get<5>(it->second), get<4>(it->second), it->first))
+								{
+									// Failure has been recorded in initPort
+									it++;
+									continue;
+								}
+
+								initPortSupportedSpeeds(get<0>(it->second), m_portListLaneMap[it->first]);
+								initPortSupportedFecModes(get<0>(it->second), m_portListLaneMap[it->first]);
+								it++;
+							}
+							else
+							{
+								m_portsToAddMap[it->first] = it->second;
+							}
+						}
+					}
+					m_portConfigState = PORT_CONFIG_DONE;
+				}
+
+				if (m_isBulkPortCreationSupported)
+				{
+					if (m_isBulkPortRemovalSupported)
+					{
+						removePorts();
+					}
+					addPorts();
+					for (auto attrs : m_portsAttrs)
+					{
+						if (handlePortInit(attrs.p, attrs.alias, attrs.admin_status,
+								attrs.an_str, attrs.lt_str, attrs.serdes_attr, attrs.speed,
+								attrs.adv_speeds_str, attrs.interface_type_str, attrs.adv_interface_types_str,
+								attrs.mtu, attrs.tpid, attrs.fec_mode, attrs.pfc_asym, attrs.learn_mode) != task_success)
+						{
+							SWSS_LOG_ERROR("Failed to initialize port %s", attrs.alias.c_str());
+						}
+					}
+				}
+
             }
 
             if (m_portConfigState != PORT_CONFIG_DONE)
@@ -3265,497 +3952,36 @@ void PortsOrch::doPortTask(Consumer &consumer)
             }
             else
             {
-                if (admin_status.empty())
-                {
-                    admin_status = p.m_admin_state_up ? "up" : "down";
-                }
+            	if (m_isBulkPortCreationSupported)
+            	{
+            		port_attrs p_attrs = {
+            				p, alias, admin_status, an_str, lt_str, serdes_attr,
+	            			speed, adv_speeds_str, interface_type_str, adv_interface_types_str,
+							mtu, tpid, fec_mode, pfc_asym, learn_mode
+            		};
+            		m_portsAttrs.push_back(p_attrs);
+            		it = consumer.m_toSync.erase(it);
+            		continue;
+            	}
+            	else
+            	{
+            		auto status = handlePortInit(p, alias, admin_status, an_str, lt_str, serdes_attr,
+							speed, adv_speeds_str, interface_type_str, adv_interface_types_str,
+							mtu, tpid, fec_mode, pfc_asym, learn_mode);
 
-                if (!an_str.empty())
-                {
-                    if (autoneg_mode_map.find(an_str) == autoneg_mode_map.end())
-                    {
-                        SWSS_LOG_ERROR("Failed to parse autoneg value: %s", an_str.c_str());
-                        // Invalid auto negotiation mode configured, don't retry
-                        it = consumer.m_toSync.erase(it);
-                        continue;
-                    }
-                    an = autoneg_mode_map[an_str];
-                    if (an != p.m_autoneg)
-                    {
-                        if (p.m_cap_an < 0)
-                        {
-                            initPortCapAutoNeg(p);
-                            m_portList[alias] = p;
-                        }
-                        if (p.m_cap_an < 1)
-                        {
-                            SWSS_LOG_ERROR("%s: autoneg is not supported (cap=%d)", p.m_alias.c_str(), p.m_cap_an);
-                            // autoneg is not supported, don't retry
-                            it = consumer.m_toSync.erase(it);
-                            continue;
-                        }
-                        if (p.m_admin_state_up)
-                        {
-                            /* Bring port down before applying speed */
-                            if (!setPortAdminStatus(p, false))
-                            {
-                                SWSS_LOG_ERROR("Failed to set port %s admin status DOWN to set port autoneg mode", alias.c_str());
-                                it++;
-                                continue;
-                            }
-
-                            p.m_admin_state_up = false;
-                            m_portList[alias] = p;
-                        }
-
-                        auto status = setPortAutoNeg(p.m_port_id, an);
-                        if (status != task_success)
-                        {
-                            SWSS_LOG_ERROR("Failed to set port %s AN from %d to %d", alias.c_str(), p.m_autoneg, an);
-                            if (status == task_need_retry)
-                            {
-                                it++;
-                            }
-                            else
-                            {
-                                it = consumer.m_toSync.erase(it);
-                            }
-                            continue;
-                        }
-                        SWSS_LOG_NOTICE("Set port %s AutoNeg from %d to %d", alias.c_str(), p.m_autoneg, an);
-                        p.m_autoneg = static_cast<swss::Port::AutoNegMode>(an);
-                        m_portList[alias] = p;
-                        m_portStateTable.hdel(p.m_alias, "rmt_adv_speeds");
-                        updatePortStatePoll(p, PORT_STATE_POLL_AN, (an > 0));
-                    }
-                }
-
-                if (!lt_str.empty() && (p.m_type == Port::PHY))
-                {
-                    if (link_training_mode_map.find(lt_str) == link_training_mode_map.end())
-                    {
-                        SWSS_LOG_ERROR("Failed to parse LT value: %s", lt_str.c_str());
-                        // Invalid link training mode configured, don't retry
-                        it = consumer.m_toSync.erase(it);
-                        continue;
-                    }
-
-                    lt = link_training_mode_map[lt_str];
-                    if (lt != p.m_link_training)
-                    {
-                        if (p.m_cap_lt < 0)
-                        {
-                            initPortCapLinkTraining(p);
-                            m_portList[alias] = p;
-                        }
-                        if (p.m_cap_lt < 1)
-                        {
-                            SWSS_LOG_WARN("%s: LT is not supported(cap=%d)", alias.c_str(), p.m_cap_lt);
-                            // Don't retry
-                            it = consumer.m_toSync.erase(it);
-                            continue;
-                        }
-
-                        auto status = setPortLinkTraining(p, lt > 0 ? true : false);
-                        if (status != task_success)
-                        {
-                            SWSS_LOG_ERROR("Failed to set port %s LT from %d to %d", alias.c_str(), p.m_link_training, lt);
-                            if (status == task_need_retry)
-                            {
-                                it++;
-                            }
-                            else
-                            {
-                                it = consumer.m_toSync.erase(it);
-                            }
-                            continue;
-                        }
-                        m_portStateTable.hset(alias, "link_training_status", lt_str);
-                        SWSS_LOG_NOTICE("Set port %s LT from %d to %d", alias.c_str(), p.m_link_training, lt);
-                        p.m_link_training = lt;
-                        m_portList[alias] = p;
-                        updatePortStatePoll(p, PORT_STATE_POLL_LT, (lt > 0));
-
-                        // Restore pre-emphasis when LT is transitioned from ON to OFF
-                        if ((p.m_link_training < 1) && (serdes_attr.size() == 0))
-                        {
-                            serdes_attr = p.m_preemphasis;
-                        }
-                    }
-                }
-
-                if (speed != 0)
-                {
-                    if (speed != p.m_speed)
-                    {
-                        if (!isSpeedSupported(alias, p.m_port_id, speed))
-                        {
-                            SWSS_LOG_ERROR("Unsupported port speed %u", speed);
-                            // Speed not supported, dont retry
-                            it = consumer.m_toSync.erase(it);
-                            continue;
-                        }
-
-                        // for backward compatible, if p.m_autoneg != 1, toggle admin status
-                        if (p.m_admin_state_up && p.m_autoneg != 1)
-                        {
-                            /* Bring port down before applying speed */
-                            if (!setPortAdminStatus(p, false))
-                            {
-                                SWSS_LOG_ERROR("Failed to set port %s admin status DOWN to set speed", alias.c_str());
-                                it++;
-                                continue;
-                            }
-
-                            p.m_admin_state_up = false;
-                            m_portList[alias] = p;
-                        }
-
-                        auto status = setPortSpeed(p, speed);
-                        if (status != task_success)
-                        {
-                            SWSS_LOG_ERROR("Failed to set port %s speed from %u to %u", alias.c_str(), p.m_speed, speed);
-                            if (status == task_need_retry)
-                            {
-                                it++;
-                            }
-                            else
-                            {
-                                it = consumer.m_toSync.erase(it);
-                            }
-                            continue;
-                        }
-
-                        SWSS_LOG_NOTICE("Set port %s speed from %u to %u", alias.c_str(), p.m_speed, speed);
-                        p.m_speed = speed;
-                        m_portList[alias] = p;
-                    }
-                    else
-                    {
-                        /* Always update Gearbox speed on Gearbox ports */
-                        setGearboxPortsAttr(p, SAI_PORT_ATTR_SPEED, &speed);
-                    }
-                }
-
-                if (!adv_speeds_str.empty())
-                {
-                    boost::to_lower(adv_speeds_str);
-                    if (!getPortAdvSpeedsVal(adv_speeds_str, adv_speeds))
-                    {
-                        // Invalid advertised speeds configured, dont retry
-                        it = consumer.m_toSync.erase(it);
-                        continue;
-                    }
-
-                    if (adv_speeds != p.m_adv_speeds)
-                    {
-                        if (p.m_admin_state_up && p.m_autoneg == 1)
-                        {
-                            /* Bring port down before applying speed */
-                            if (!setPortAdminStatus(p, false))
-                            {
-                                SWSS_LOG_ERROR("Failed to set port %s admin status DOWN to set interface type", alias.c_str());
-                                it++;
-                                continue;
-                            }
-
-                            p.m_admin_state_up = false;
-                            m_portList[alias] = p;
-                        }
-
-                        auto ori_adv_speeds = swss::join(',', p.m_adv_speeds.begin(), p.m_adv_speeds.end());
-                        auto status = setPortAdvSpeeds(p.m_port_id, adv_speeds);
-                        if (status != task_success)
-                        {
-
-                            SWSS_LOG_ERROR("Failed to set port %s advertised speed from %s to %s", alias.c_str(),
-                                                                                                   ori_adv_speeds.c_str(),
-                                                                                                   adv_speeds_str.c_str());
-                            if (status == task_need_retry)
-                            {
-                                it++;
-                            }
-                            else
-                            {
-                                it = consumer.m_toSync.erase(it);
-                            }
-                            continue;
-                        }
-                        SWSS_LOG_NOTICE("Set port %s advertised speed from %s to %s", alias.c_str(),
-                                                                                      ori_adv_speeds.c_str(),
-                                                                                      adv_speeds_str.c_str());
-                        p.m_adv_speeds.swap(adv_speeds);
-                        m_portList[alias] = p;
-                    }
-                }
-
-                if (!interface_type_str.empty())
-                {
-                    boost::to_lower(interface_type_str);
-                    if (!getPortInterfaceTypeVal(interface_type_str, interface_type))
-                    {
-                        // Invalid interface type configured, dont retry
-                        it = consumer.m_toSync.erase(it);
-                        continue;
-                    }
-
-                    if (interface_type != p.m_interface_type)
-                    {
-                        if (p.m_admin_state_up && p.m_autoneg == 0)
-                        {
-                            /* Bring port down before applying speed */
-                            if (!setPortAdminStatus(p, false))
-                            {
-                                SWSS_LOG_ERROR("Failed to set port %s admin status DOWN to set interface type", alias.c_str());
-                                it++;
-                                continue;
-                            }
-
-                            p.m_admin_state_up = false;
-                            m_portList[alias] = p;
-                        }
-
-                        auto status = setPortInterfaceType(p.m_port_id, interface_type);
-                        if (status != task_success)
-                        {
-                            SWSS_LOG_ERROR("Failed to set port %s interface type to %s", alias.c_str(), interface_type_str.c_str());
-                            if (status == task_need_retry)
-                            {
-                                it++;
-                            }
-                            else
-                            {
-                                it = consumer.m_toSync.erase(it);
-                            }
-                            continue;
-                        }
-
-                        SWSS_LOG_NOTICE("Set port %s interface type to %s", alias.c_str(), interface_type_str.c_str());
-                        p.m_interface_type = interface_type;
-                        m_portList[alias] = p;
-                    }
-                }
-
-                if (!adv_interface_types_str.empty())
-                {
-                    boost::to_lower(adv_interface_types_str);
-                    if (!getPortAdvInterfaceTypesVal(adv_interface_types_str, adv_interface_types))
-                    {
-                        // Invalid advertised interface types configured, dont retry
-                        it = consumer.m_toSync.erase(it);
-                        continue;
-                    }
-
-                    if (adv_interface_types != p.m_adv_interface_types && p.m_autoneg == 1)
-                    {
-                        if (p.m_admin_state_up)
-                        {
-                            /* Bring port down before applying speed */
-                            if (!setPortAdminStatus(p, false))
-                            {
-                                SWSS_LOG_ERROR("Failed to set port %s admin status DOWN to set interface type", alias.c_str());
-                                it++;
-                                continue;
-                            }
-
-                            p.m_admin_state_up = false;
-                            m_portList[alias] = p;
-                        }
-
-                        auto status = setPortAdvInterfaceTypes(p.m_port_id, adv_interface_types);
-                        if (status != task_success)
-                        {
-                            SWSS_LOG_ERROR("Failed to set port %s advertised interface type to %s", alias.c_str(), adv_interface_types_str.c_str());
-                            if (status == task_need_retry)
-                            {
-                                it++;
-                            }
-                            else
-                            {
-                                it = consumer.m_toSync.erase(it);
-                            }
-                            continue;
-                        }
-
-                        SWSS_LOG_NOTICE("Set port %s advertised interface type to %s", alias.c_str(), adv_interface_types_str.c_str());
-                        p.m_adv_interface_types.swap(adv_interface_types);
-                        m_portList[alias] = p;
-                    }
-                }
-
-                if (mtu != 0 && mtu != p.m_mtu)
-                {
-                    if (setPortMtu(p, mtu))
-                    {
-                        p.m_mtu = mtu;
-                        m_portList[alias] = p;
-                        SWSS_LOG_NOTICE("Set port %s MTU to %u", alias.c_str(), mtu);
-                        if (p.m_rif_id)
-                        {
-                            gIntfsOrch->setRouterIntfsMtu(p);
-                        }
-                        // Sub interfaces inherit parent physical port mtu
-                        updateChildPortsMtu(p, mtu);
-                    }
-                    else
-                    {
-                        SWSS_LOG_ERROR("Failed to set port %s MTU to %u", alias.c_str(), mtu);
-                        it++;
-                        continue;
-                    }
-                }
-
-                if (tpid != 0 && tpid != p.m_tpid)
-                {
-                    SWSS_LOG_DEBUG("Set port %s TPID to 0x%x", alias.c_str(), tpid);
-                    if (setPortTpid(p.m_port_id, tpid))
-                    {
-                        p.m_tpid = tpid;
-                        m_portList[alias] = p;
-                    }
-                    else
-                    {
-                        SWSS_LOG_ERROR("Failed to set port %s TPID to 0x%x", alias.c_str(), tpid);
-                        it++;
-                        continue;
-                    }
-                }
-
-                if (!fec_mode.empty())
-                {
-                    if (fec_mode_map.find(fec_mode) != fec_mode_map.end())
-                    {
-                        /* reset fec mode upon mode change */
-                        if (!p.m_fec_cfg || p.m_fec_mode != fec_mode_map[fec_mode])
-                        {
-                            if (p.m_admin_state_up)
-                            {
-                                /* Bring port down before applying fec mode*/
-                                if (!setPortAdminStatus(p, false))
-                                {
-                                    SWSS_LOG_ERROR("Failed to set port %s admin status DOWN to set fec mode", alias.c_str());
-                                    it++;
-                                    continue;
-                                }
-
-                                p.m_admin_state_up = false;
-                                p.m_fec_mode = fec_mode_map[fec_mode];
-                                p.m_fec_cfg = true;
-
-                                if (setPortFec(p, fec_mode))
-                                {
-                                    m_portList[alias] = p;
-                                }
-                                else
-                                {
-                                    it++;
-                                    continue;
-                                }
-                            }
-                            else
-                            {
-                                /* Port is already down, setting fec mode*/
-                                p.m_fec_mode = fec_mode_map[fec_mode];
-                                p.m_fec_cfg = true;
-                                if (setPortFec(p, fec_mode))
-                                {
-                                    m_portList[alias] = p;
-                                }
-                                else
-                                {
-                                    it++;
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-                    else
-                    {
-                        SWSS_LOG_ERROR("Unknown fec mode %s", fec_mode.c_str());
-                    }
-                }
-
-                if (!learn_mode.empty() && (p.m_learn_mode != learn_mode))
-                {
-                    if (p.m_bridge_port_id != SAI_NULL_OBJECT_ID)
-                    {
-                        if(setBridgePortLearnMode(p, learn_mode))
-                        {
-                            p.m_learn_mode = learn_mode;
-                            m_portList[alias] = p;
-                            SWSS_LOG_NOTICE("Set port %s learn mode to %s", alias.c_str(), learn_mode.c_str());
-                        }
-                        else
-                        {
-                            SWSS_LOG_ERROR("Failed to set port %s learn mode to %s", alias.c_str(), learn_mode.c_str());
-                            it++;
-                            continue;
-                        }
-                    }
-                    else
-                    {
-                        p.m_learn_mode = learn_mode;
-                        m_portList[alias] = p;
-
-                        SWSS_LOG_NOTICE("Saved to set port %s learn mode %s", alias.c_str(), learn_mode.c_str());
-                    }
-                }
-
-                if (pfc_asym != "")
-                {
-                    if (setPortPfcAsym(p, pfc_asym))
-                    {
-                        SWSS_LOG_NOTICE("Set port %s asymmetric PFC to %s", alias.c_str(), pfc_asym.c_str());
-                    }
-                    else
-                    {
-                        SWSS_LOG_ERROR("Failed to set port %s asymmetric PFC to %s", alias.c_str(), pfc_asym.c_str());
-                        it++;
-                        continue;
-                    }
-                }
-
-                if (serdes_attr.size() != 0)
-                {
-                    if (p.m_link_training > 0)
-                    {
-                        SWSS_LOG_NOTICE("Save port %s preemphasis for LT", alias.c_str());
-                        p.m_preemphasis = serdes_attr;
-                        m_portList[alias] = p;
-                    }
-                    else if (setPortSerdesAttribute(p.m_port_id, serdes_attr))
-                    {
-                        SWSS_LOG_NOTICE("Set port %s preemphasis is success", alias.c_str());
-                        p.m_preemphasis = serdes_attr;
-                        m_portList[alias] = p;
-                    }
-                    else
-                    {
-                        SWSS_LOG_ERROR("Failed to set port %s pre-emphasis", alias.c_str());
-                        it++;
-                        continue;
-                    }
-                }
-                
-                /* create host_tx_ready field in state-db */
-                initHostTxReadyState(p);
-                
-                /* Last step set port admin status */
-                if (!admin_status.empty() && (p.m_admin_state_up != (admin_status == "up")))
-                {
-                    if (setPortAdminStatus(p, admin_status == "up"))
-                    {
-                        p.m_admin_state_up = (admin_status == "up");
-                        m_portList[alias] = p;
-                        SWSS_LOG_NOTICE("Set port %s admin status to %s", alias.c_str(), admin_status.c_str());
-                    }
-                    else
-                    {
-                        SWSS_LOG_ERROR("Failed to set port %s admin status to %s", alias.c_str(), admin_status.c_str());
-                        it++;
-                        continue;
-                    }
-                }
+					if (status != task_success)
+					{
+						if (status == task_need_retry)
+						{
+							it++;
+						}
+						else
+						{
+							it = consumer.m_toSync.erase(it);
+						}
+						continue;
+					}
+            	}
             }
         }
         else if (op == DEL_COMMAND)
