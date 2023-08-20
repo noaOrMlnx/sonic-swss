@@ -471,6 +471,10 @@ int main(int argc, char **argv)
     attr.value.ptr = (void *)on_switch_shutdown_request;
     attrs.push_back(attr);
 
+    attr.id = SAI_SWITCH_ATTR_PORT_HOST_TX_READY_NOTIFY;
+    attr.value.ptr = (void *)on_port_host_tx_ready;
+    attrs.push_back(attr);
+
     // Instantiate database connectors
     DBConnector appl_db("APPL_DB", 0);
     DBConnector config_db("CONFIG_DB", 0);
@@ -603,12 +607,15 @@ int main(int argc, char **argv)
         }
     }
 
+    SWSS_LOG_ERROR("NOA - before create switch");
+
     status = sai_switch_api->create_switch(&gSwitchId, (uint32_t)attrs.size(), attrs.data());
     if (status != SAI_STATUS_SUCCESS)
     {
         SWSS_LOG_ERROR("Failed to create a switch, rv:%d", status);
         handleSaiFailure(true);
     }
+    SWSS_LOG_ERROR("NOA - after create switch");
     SWSS_LOG_NOTICE("Create a switch, id:%" PRIu64, gSwitchId);
 
     if (gMySwitchType == "voq" || gMySwitchType == "fabric" || gMySwitchType == "chassis-packet")

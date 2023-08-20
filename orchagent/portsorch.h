@@ -119,6 +119,7 @@ class PortsOrch : public Orch, public Subject
 {
 public:
     PortsOrch(DBConnector *db, DBConnector *stateDb, vector<table_name_with_pri_t> &tableNames, DBConnector *chassisAppDb);
+    // PortsOrch(DBConnector *db, DBConnector *stateDb, vector<PriTablesConnector> &tables, DBConnector *chassisAppDb);
 
     bool allPortsReady();
     bool isInitDone();
@@ -306,6 +307,7 @@ private:
     map<set<uint32_t>, sai_object_id_t> m_portListLaneMap;
     map<set<uint32_t>, PortConfig> m_lanesAliasSpeedMap;
     map<string, Port> m_portList;
+    map<string, Port> m_pluggedModulesPort;
     map<string, vlan_members_t> m_portVlanMember;
     map<string, std::vector<sai_object_id_t>> m_port_voq_ids;
     /* mapping from SAI object ID to Name for faster
@@ -322,8 +324,13 @@ private:
     map<string, uint32_t> m_bridge_port_ref_count;
 
     NotificationConsumer* m_portStatusNotificationConsumer;
+    NotificationConsumer* m_portHostTxReadyNotificationConsumer;
 
     swss::SelectableTimer *m_port_state_poller = nullptr;
+
+    bool m_saiHwTxSignalSupported = false;
+    bool m_saiTxReadyNotifySupported = false;
+    bool m_cmisModuleAsicSyncSupported = false;
 
     void doTask() override;
     void doTask(Consumer &consumer);
@@ -332,6 +339,7 @@ private:
     void doVlanMemberTask(Consumer &consumer);
     void doLagTask(Consumer &consumer);
     void doLagMemberTask(Consumer &consumer);
+    void doTransceiverInfoTableTask(Consumer &consumer);
 
     void doTask(NotificationConsumer &consumer);
     void doTask(swss::SelectableTimer &timer);
@@ -375,6 +383,7 @@ private:
     bool setPortAdminStatus(Port &port, bool up);
     bool getPortAdminStatus(sai_object_id_t id, bool& up);
     bool getPortMtu(const Port& port, sai_uint32_t &mtu);
+    bool getPortHostTxReady(const Port& port, bool &hostTxReadyVal);
     bool setPortMtu(const Port& port, sai_uint32_t mtu);
     bool setPortTpid(Port &port, sai_uint16_t tpid);
     bool setPortPvid (Port &port, sai_uint32_t pvid);
@@ -385,6 +394,9 @@ private:
 
     bool setBridgePortAdminStatus(sai_object_id_t id, bool up);
 
+    bool setSaiHostTxSignal(Port port, bool enable);
+
+    void setHostTxReady(sai_object_id_t portId, std::string status);
     // Get supported speeds on system side
     bool isSpeedSupported(const std::string& alias, sai_object_id_t port_id, sai_uint32_t speed);
     void getPortSupportedSpeeds(const std::string& alias, sai_object_id_t port_id, PortSupportedSpeeds &supported_speeds);
