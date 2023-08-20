@@ -372,6 +372,10 @@ static void getPortSerdesAttr(PortSerdesAttrMap_t &map, const PortConfig &port)
  *    bridge. By design, SONiC switch starts with all bridge ports removed from
  *    default VLAN and all ports removed from .1Q bridge.
  */
+
+
+// PortsOrch::PortsOrch(DBConnector *db, DBConnector *stateDb, vector<PriTablesConnector> &tables, DBConnector *chassisAppDb) :
+//         Orch(tables),
 PortsOrch::PortsOrch(DBConnector *db, DBConnector *stateDb, vector<table_name_with_pri_t> &tableNames, DBConnector *chassisAppDb) :
         Orch(db, tableNames),
         m_portStateTable(stateDb, STATE_PORT_TABLE_NAME),
@@ -512,6 +516,46 @@ PortsOrch::PortsOrch(DBConnector *db, DBConnector *stateDb, vector<table_name_wi
         }
     }
 
+    // Query whether SAI supports Host Tx Signal and Host Tx Notification
+
+    sai_attr_capability_t capability;
+    SWSS_LOG_ERROR("NOA before query capability");
+    if (sai_query_attribute_capability(gSwitchId, SAI_OBJECT_TYPE_PORT,
+                                            SAI_PORT_ATTR_HOST_TX_SIGNAL_ENABLE,
+                                            &capability) == SAI_STATUS_SUCCESS)
+    {
+        SWSS_LOG_ERROR("NOA query capability of SAI_PORT_ATTR_HOST_TX_SIGNAL_ENABLE");
+        // m_saiHwTxSignalSupported = true; // NOA this is a temp workaround because query does not work
+        if (capability.create_implemented == true)
+        {
+            SWSS_LOG_ERROR("NOA SAI_PORT_ATTR_HOST_TX_SIGNAL_ENABLE is true");
+            m_saiHwTxSignalSupported = true;
+        }
+    }
+
+    if (sai_query_attribute_capability(gSwitchId, SAI_OBJECT_TYPE_SWITCH,
+                                            SAI_SWITCH_ATTR_PORT_HOST_TX_READY_NOTIFY,
+                                            &capability) == SAI_STATUS_SUCCESS)
+    {
+        SWSS_LOG_ERROR("NOA query capability of SAI_SWITCH_ATTR_PORT_HOST_TX_READY_NOTIFY");
+        if (capability.create_implemented == true)
+        {
+            SWSS_LOG_ERROR("NOA SAI_SWITCH_ATTR_PORT_HOST_TX_READY_NOTIFY is true");
+            m_saiTxReadyNotifySupported = true;
+        }
+    }
+    SWSS_LOG_ERROR("NOA after query capability");
+
+    if (m_saiHwTxSignalSupported && m_saiTxReadyNotifySupported)
+    {
+        SWSS_LOG_ERROR("NOA m_cmisModuleAsicSyncSupported is true");
+        m_cmisModuleAsicSyncSupported = true;
+        auto transceiverInfoTableName = STATE_TRANSCEIVER_INFO_TABLE_NAME;
+        Orch::addExecutor(new Consumer(new SubscriberStateTable(stateDb, transceiverInfoTableName, TableConsumable::DEFAULT_POP_BATCH_SIZE, 0), this, transceiverInfoTableName));
+        SWSS_LOG_ERROR("NOA added executre for STATE_TRANSCEIVER_INFO_TABLE_NAME table");
+        // TODO open a new notification - opened it in another place
+    }
+
     if (gMySwitchType != "dpu")
     {
         sai_attr_capability_t attr_cap;
@@ -564,6 +608,14 @@ PortsOrch::PortsOrch(DBConnector *db, DBConnector *stateDb, vector<table_name_wi
     m_portStatusNotificationConsumer = new swss::NotificationConsumer(notificationsDb, "NOTIFICATIONS");
     auto portStatusNotificatier = new Notifier(m_portStatusNotificationConsumer, this, "PORT_STATUS_NOTIFICATIONS");
     Orch::addExecutor(portStatusNotificatier);
+
+    if (m_cmisModuleAsicSyncSupported)
+    {
+        m_portHostTxReadyNotificationConsumer = new swss::NotificationConsumer(notificationsDb, "NOTIFICATIONS");
+        auto portHostTxReadyNotificatier = new Notifier(m_portHostTxReadyNotificationConsumer, this, "PORT_HOST_TX_NOTIFICATIONS");
+        Orch::addExecutor(portHostTxReadyNotificatier);
+        SWSS_LOG_ERROR("NOA added host tx ready notification as new executer");
+    }// NOA TODO
 
     if (gMySwitchType == "voq")
     {
@@ -1368,8 +1420,11 @@ bool PortsOrch::setPortAdminStatus(Port &port, bool state)
     attr.id = SAI_PORT_ATTR_ADMIN_STATE;
     attr.value.booldata = state;
 
+    // if sync between cmis module configuration and asic is supported,
+    // do not change host_tx_ready value in STATE DB when admin status is changed.
+
     /* Update the host_tx_ready to false before setting admin_state, when admin state is false */
-    if (!state)
+    if (!state && !m_cmisModuleAsicSyncSupported)
     {
         m_portStateTable.hset(port.m_alias, "host_tx_ready", "false");
         SWSS_LOG_NOTICE("Set admin status DOWN host_tx_ready to false for port %s",
@@ -1382,7 +1437,10 @@ bool PortsOrch::setPortAdminStatus(Port &port, bool state)
         SWSS_LOG_ERROR("Failed to set admin status %s for port %s."
                        " Setting host_tx_ready as false",
                        state ? "UP" : "DOWN", port.m_alias.c_str());
-        m_portStateTable.hset(port.m_alias, "host_tx_ready", "false");
+        if (!m_cmisModuleAsicSyncSupported)
+        {
+            m_portStateTable.hset(port.m_alias, "host_tx_ready", "false");
+        }
         task_process_status handle_status = handleSaiSetStatus(SAI_API_PORT, status);
         if (handle_status != task_success)
         {
@@ -1391,7 +1449,7 @@ bool PortsOrch::setPortAdminStatus(Port &port, bool state)
     }
 
     bool gbstatus = setGearboxPortsAttr(port, SAI_PORT_ATTR_ADMIN_STATE, &state);
-    if (gbstatus != true)
+    if (gbstatus != true && !m_cmisModuleAsicSyncSupported)
     {
         m_portStateTable.hset(port.m_alias, "host_tx_ready", "false");
         SWSS_LOG_NOTICE("Set host_tx_ready to false as gbstatus is false "
@@ -1399,7 +1457,7 @@ bool PortsOrch::setPortAdminStatus(Port &port, bool state)
     }
 
     /* Update the state table for host_tx_ready*/
-    if (state && (gbstatus == true) && (status == SAI_STATUS_SUCCESS) )
+    if (state && (gbstatus == true) && (status == SAI_STATUS_SUCCESS) && !m_cmisModuleAsicSyncSupported)
     {
         m_portStateTable.hset(port.m_alias, "host_tx_ready", "true");
         SWSS_LOG_NOTICE("Set admin status UP host_tx_ready to true for port %s",
@@ -1407,6 +1465,20 @@ bool PortsOrch::setPortAdminStatus(Port &port, bool state)
     }
 
     return true;
+}
+
+void PortsOrch::setHostTxReady(sai_object_id_t portId, std::string status)
+{
+    Port p;
+    SWSS_LOG_ERROR("NOA inside setHostTxReady function. status = %s", status.c_str());
+
+    if (!getPort(portId, p))
+    {
+        SWSS_LOG_ERROR("Failed to get port object for port id 0x%" PRIx64, portId);
+        return;
+    }
+
+    m_portStateTable.hset(p.m_alias, "host_tx_ready", status);
 }
 
 bool PortsOrch::getPortAdminStatus(sai_object_id_t id, bool &up)
@@ -1430,6 +1502,24 @@ bool PortsOrch::getPortAdminStatus(sai_object_id_t id, bool &up)
     }
 
     up = attr.value.booldata;
+
+    return true;
+}
+
+bool PortsOrch::getPortHostTxReady(const Port& port, bool &hostTxReadyVal)
+{
+    SWSS_LOG_ENTER();
+    SWSS_LOG_ERROR("NOA inside getPortHostTxReady function");
+    sai_attribute_t attr;
+    attr.id = SAI_PORT_ATTR_HOST_TX_READY_STATUS;
+
+    sai_status_t status = sai_port_api->get_port_attribute(port.m_port_id, 1, &attr);
+    if (status != SAI_STATUS_SUCCESS)
+    {
+        return false;
+    }
+
+    hostTxReadyVal = attr.value.s32;
 
     return true;
 }
@@ -4357,6 +4447,65 @@ void PortsOrch::doVlanMemberTask(Consumer &consumer)
     }
 }
 
+void PortsOrch::doTransceiverInfoTableTask(Consumer &consumer)
+{
+    /*
+    the idea is to listen to transceiver info table, and also maintain an internal list of plugged modules.
+
+    */
+    SWSS_LOG_ENTER();
+    SWSS_LOG_ERROR("NOA inside doTransceiverInfoTableTask");
+    string table_name = consumer.getTableName();
+
+    auto it = consumer.m_toSync.begin();
+    while(it != consumer.m_toSync.end())
+    {
+        auto t = it->second;
+        string alias = kfvKey(t);
+        string op = kfvOp(t);
+
+        if (op == SET_COMMAND)
+        {
+            SWSS_LOG_ERROR("NOA doTransceiverInfoTableTask set command");   
+            if (m_pluggedModulesPort.find(alias) == m_pluggedModulesPort.end())
+            {
+                m_pluggedModulesPort[alias] = m_portList[alias];
+                SWSS_LOG_ERROR("NOA suppose to set host tx signal = true");  // TODO
+                setSaiHostTxSignal(m_pluggedModulesPort[alias], true);
+                SWSS_LOG_ERROR("NOA after setSaiHostTxSignal");
+            }
+        }
+        else if (op == DEL_COMMAND)
+        {
+            SWSS_LOG_ERROR("NOA doTransceiverInfoTableTask del command");
+            Port p;
+            if (m_pluggedModulesPort.find(alias) != m_pluggedModulesPort.end())
+            {
+                p = m_pluggedModulesPort[alias];
+                m_pluggedModulesPort.erase(alias);
+            }
+            setSaiHostTxSignal(p, false);
+        }
+        it = consumer.m_toSync.erase(it);
+    }
+}
+
+bool PortsOrch::setSaiHostTxSignal(Port port, bool enable)
+{
+    sai_attribute_t attr;
+    attr.id = SAI_PORT_ATTR_HOST_TX_SIGNAL_ENABLE;
+    attr.value.booldata = enable;
+    sai_status_t status = sai_port_api->set_port_attribute(port.m_port_id, &attr);
+
+    if (status != SAI_STATUS_SUCCESS)
+    {
+        SWSS_LOG_ERROR("Could not set port {} attribute {}");
+        return false;
+    }
+
+    return true;
+}
+
 void PortsOrch::doLagTask(Consumer &consumer)
 {
     SWSS_LOG_ENTER();
@@ -4755,7 +4904,12 @@ void PortsOrch::doTask(Consumer &consumer)
 
     string table_name = consumer.getTableName();
 
-    if (table_name == APP_PORT_TABLE_NAME)
+    if (table_name == STATE_TRANSCEIVER_INFO_TABLE_NAME && m_cmisModuleAsicSyncSupported)
+    {
+        SWSS_LOG_ERROR("NOA doTask getting into doTransceiverInfoTableTask");
+        doTransceiverInfoTableTask(consumer);
+    }
+    else if (table_name == APP_PORT_TABLE_NAME)
     {
         doPortTask(consumer);
     }
@@ -5041,6 +5195,7 @@ bool PortsOrch::initializePort(Port &port)
         port.m_oper_status = SAI_PORT_OPER_STATUS_DOWN;
     }
 
+
     /* initialize port admin status */
     if (!getPortAdminStatus(port.m_port_id, port.m_admin_state_up))
     {
@@ -5059,6 +5214,30 @@ bool PortsOrch::initializePort(Port &port)
     if (!getPortMtu(port, port.m_mtu))
     {
         SWSS_LOG_ERROR("Failed to get initial port mtu %d", port.m_mtu);
+    }
+
+    /* initialize port host_tx_ready value (only for supporting systems) */
+    if (m_cmisModuleAsicSyncSupported)
+    {
+        bool hostTxReadyVal;
+        if (!getPortHostTxReady(port, hostTxReadyVal))
+        {
+            // SWSS_LOG_ERROR("Failed to get host_tx_ready value from SAI to Port %d" PRIx64 , port.m_port_id);
+            SWSS_LOG_ERROR("NOA fail to get host_tx_ready");
+        }
+        /* set value to state DB */
+        
+        string hostTxReadyStr = "false";
+        if (hostTxReadyVal)
+        {
+            SWSS_LOG_ERROR("NOA host tx ready value from getPortHostTxReady is true");
+            hostTxReadyStr = "true";
+        }
+        else
+        {
+            SWSS_LOG_ERROR("NOA host tx ready value from getPortHostTxReady is false");
+        }
+        m_portStateTable.hset(port.m_alias, "host_tx_ready", hostTxReadyStr);
     }
 
     /*
@@ -7022,10 +7201,12 @@ uint32_t PortsOrch::getNumberOfPortSupportedQueueCounters(string port)
 void PortsOrch::doTask(NotificationConsumer &consumer)
 {
     SWSS_LOG_ENTER();
+    SWSS_LOG_ERROR("NOA inside doTask of notification consumer");
 
     /* Wait for all ports to be initialized */
     if (!allPortsReady())
     {
+        SWSS_LOG_ERROR("NOA inside doTask of notification consumer - reutrn because ports are not ready");
         return;
     }
 
@@ -7035,13 +7216,15 @@ void PortsOrch::doTask(NotificationConsumer &consumer)
 
     consumer.pop(op, data, values);
 
-    if (&consumer != m_portStatusNotificationConsumer)
+    if (&consumer != m_portStatusNotificationConsumer || &consumer != m_portHostTxReadyNotificationConsumer)
     {
+        SWSS_LOG_ERROR("NOA inside doTask of notification - consumer is not valid");
         return;
     }
 
-    if (op == "port_state_change")
+    if (&consumer == m_portStatusNotificationConsumer && op == "port_state_change")
     {
+        SWSS_LOG_ERROR("NOA inside doTask of notification - port state change notification");
         uint32_t count;
         sai_port_oper_status_notification_t *portoperstatus = nullptr;
 
@@ -7083,6 +7266,28 @@ void PortsOrch::doTask(NotificationConsumer &consumer)
 
         sai_deserialize_free_port_oper_status_ntf(count, portoperstatus);
     }
+    else if (&consumer == m_portHostTxReadyNotificationConsumer && op == "port_host_tx_ready")
+    {
+        SWSS_LOG_ERROR("NOA inside doTask of notification - port host tx ready change notification!!!!!!!!!!!!!!!!!!");
+        sai_object_id_t port_id;
+        sai_object_id_t switch_id;
+        // sai_port_host_tx_ready_status_t *host_tx_ready_status = SAI_NULL_OBJECT_ID;
+        sai_port_host_tx_ready_status_t host_tx_ready_status;
+
+        sai_deserialize_port_host_tx_ready_ntf(data, port_id, switch_id, host_tx_ready_status);
+
+        if (host_tx_ready_status == SAI_PORT_HOST_TX_READY_STATUS_READY)
+        {
+            setHostTxReady(port_id, "true");
+        }
+        else if (host_tx_ready_status == SAI_PORT_HOST_TX_READY_STATUS_NOT_READY)
+        {
+            setHostTxReady(port_id, "false");
+        }
+
+        sai_deserialize_free_port_host_tx_ready_ntf(host_tx_ready_status);
+    }
+
 }
 
 void PortsOrch::updatePortOperStatus(Port &port, sai_port_oper_status_t status)
@@ -7463,6 +7668,7 @@ void PortsOrch::removePortSerdesAttribute(sai_object_id_t port_id)
 
     if (port_attr.value.oid != SAI_NULL_OBJECT_ID)
     {
+        // SWSS_LOG_ERROR("NOA suppose to do remove_port_serdes now, but removed it");
         status = sai_port_api->remove_port_serdes(port_attr.value.oid);
         if (status != SAI_STATUS_SUCCESS)
         {

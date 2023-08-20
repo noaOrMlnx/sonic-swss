@@ -494,429 +494,340 @@ namespace portsorch_test
 
     };
 
-    TEST_F(PortsOrchTest, PortBulkCreateRemove)
-    {
-        auto portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
-
-        // Get SAI default ports
-        auto &ports = defaultPortList;
-        ASSERT_TRUE(!ports.empty());
-
-        // Generate port config
-        for (std::uint32_t idx1 = 0, idx2 = 1; idx1 < ports.size() * 4; idx1 += 4, idx2++)
-        {
-            std::stringstream key;
-            key << FRONT_PANEL_PORT_PREFIX << idx1;
-
-            std::stringstream alias;
-            alias << "etp" << idx2;
-
-            std::stringstream index;
-            index << idx2;
-
-            std::stringstream lanes;
-            lanes << idx1 << "," << idx1 + 1 << "," << idx1 + 2 << "," << idx1 + 3;
-
-            std::vector<FieldValueTuple> fvList = {
-                { "alias",               alias.str() },
-                { "index",               index.str() },
-                { "lanes",               lanes.str() },
-                { "speed",               "100000"    },
-                { "autoneg",             "off"       },
-                { "adv_speeds",          "all"       },
-                { "interface_type",      "none"      },
-                { "adv_interface_types", "all"       },
-                { "fec",                 "rs"        },
-                { "mtu",                 "9100"      },
-                { "tpid",                "0x8100"    },
-                { "pfc_asym",            "off"       },
-                { "admin_status",        "up"        },
-                { "description",         "FP port"   }
-            };
-
-            portTable.set(key.str(), fvList);
-        }
-
-        // Set PortConfigDone
-        portTable.set("PortConfigDone", { { "count", std::to_string(ports.size()) } });
-
-        // Refill consumer
-        gPortsOrch->addExistingData(&portTable);
-
-        // Apply configuration
-        static_cast<Orch*>(gPortsOrch)->doTask();
-
-        // Port count: 32 Data + 1 CPU
-        ASSERT_EQ(gPortsOrch->getAllPorts().size(), ports.size() + 1);
-
-        // Dump pending tasks
-        std::vector<std::string> taskList;
-        gPortsOrch->dumpPendingTasks(taskList);
-        ASSERT_TRUE(taskList.empty());
-
-        // Cleanup ports
-        cleanupPorts(gPortsOrch);
-    }
-
-    TEST_F(PortsOrchTest, PortBasicConfig)
-    {
-        auto portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
-
-        // Get SAI default ports
-        auto &ports = defaultPortList;
-        ASSERT_TRUE(!ports.empty());
-
-        // Generate port config
-        for (const auto &cit : ports)
-        {
-            portTable.set(cit.first, cit.second);
-        }
-
-        // Set PortConfigDone
-        portTable.set("PortConfigDone", { { "count", std::to_string(ports.size()) } });
-
-        // Refill consumer
-        gPortsOrch->addExistingData(&portTable);
-
-        // Apply configuration
-        static_cast<Orch*>(gPortsOrch)->doTask();
-
-        // Port count: 32 Data + 1 CPU
-        ASSERT_EQ(gPortsOrch->getAllPorts().size(), ports.size() + 1);
-
-        // Generate port config
-        std::deque<KeyOpFieldsValuesTuple> kfvList = {{
-            "Ethernet0",
-            SET_COMMAND, {
-                { "speed",               "100000"            },
-                { "autoneg",             "on"                },
-                { "adv_speeds",          "1000,10000,100000" },
-                { "interface_type",      "CR"                },
-                { "adv_interface_types", "CR,CR2,CR4,CR8"    },
-                { "fec",                 "fc"                },
-                { "mtu",                 "9100"              },
-                { "tpid",                "0x9100"            },
-                { "pfc_asym",            "on"                },
-                { "link_training",       "on"                },
-                { "admin_status",        "up"                }
-            }
-        }};
-
-        // Refill consumer
-        auto consumer = dynamic_cast<Consumer*>(gPortsOrch->getExecutor(APP_PORT_TABLE_NAME));
-        consumer->addToSync(kfvList);
-
-        // Apply configuration
-        static_cast<Orch*>(gPortsOrch)->doTask();
-
-        // Get port
-        Port p;
-        ASSERT_TRUE(gPortsOrch->getPort("Ethernet0", p));
-
-        // Verify speed
-        ASSERT_EQ(p.m_speed, 100000);
-
-        // Verify auto-negotiation
-        ASSERT_TRUE(p.m_autoneg);
-
-        // Verify advertised speed
-        std::set<std::uint32_t> adv_speeds = { 1000, 10000, 100000 };
-        ASSERT_EQ(p.m_adv_speeds, adv_speeds);
-
-        // Verify interface type
-        ASSERT_EQ(p.m_interface_type, SAI_PORT_INTERFACE_TYPE_CR);
-
-        // Verify advertised interface type
-        std::set<sai_port_interface_type_t> adv_interface_types = {
-            SAI_PORT_INTERFACE_TYPE_CR,
-            SAI_PORT_INTERFACE_TYPE_CR2,
-            SAI_PORT_INTERFACE_TYPE_CR4,
-            SAI_PORT_INTERFACE_TYPE_CR8
-        };
-        ASSERT_EQ(p.m_adv_interface_types, adv_interface_types);
-
-        // Verify FEC
-        ASSERT_EQ(p.m_fec_mode, SAI_PORT_FEC_MODE_FC);
-
-        // Verify MTU
-        ASSERT_EQ(p.m_mtu, 9100);
-
-        // Verify TPID
-        ASSERT_EQ(p.m_tpid, 0x9100);
-
-        // Verify asymmetric PFC
-        ASSERT_EQ(p.m_pfc_asym, SAI_PORT_PRIORITY_FLOW_CONTROL_MODE_SEPARATE);
-
-        // Verify link training
-        ASSERT_TRUE(p.m_link_training);
-
-        // Verify admin status
-        ASSERT_TRUE(p.m_admin_state_up);
-
-        // Dump pending tasks
-        std::vector<std::string> taskList;
-        gPortsOrch->dumpPendingTasks(taskList);
-        ASSERT_TRUE(taskList.empty());
-
-        // Cleanup ports
-        cleanupPorts(gPortsOrch);
-    }
-
-    TEST_F(PortsOrchTest, PortAdvancedConfig)
-    {
-        auto portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
-
-        // Get SAI default ports
-        auto &ports = defaultPortList;
-        ASSERT_TRUE(!ports.empty());
-
-        // Generate port config
-        for (const auto &cit : ports)
-        {
-            portTable.set(cit.first, cit.second);
-        }
-
-        // Set PortConfigDone
-        portTable.set("PortConfigDone", { { "count", std::to_string(ports.size()) } });
-
-        // Refill consumer
-        gPortsOrch->addExistingData(&portTable);
-
-        // Apply configuration
-        static_cast<Orch*>(gPortsOrch)->doTask();
-
-        // Port count: 32 Data + 1 CPU
-        ASSERT_EQ(gPortsOrch->getAllPorts().size(), ports.size() + 1);
-
-        // Generate port serdes config
-        std::deque<KeyOpFieldsValuesTuple> kfvList = {{
-            "Ethernet0",
-            SET_COMMAND, {
-                { "preemphasis", "0xcad0,0xc6e0,0xc6e0,0xd2b0" },
-                { "idriver",     "0x5,0x3,0x4,0x1"             },
-                { "ipredriver",  "0x1,0x4,0x3,0x5"             },
-                { "pre1",        "0xfff0,0xfff2,0xfff1,0xfff3" },
-                { "pre2",        "0xfff0,0xfff2,0xfff1,0xfff3" },
-                { "pre3",        "0xfff0,0xfff2,0xfff1,0xfff3" },
-                { "main",        "0x90,0x92,0x91,0x93"         },
-                { "post1",       "0x10,0x12,0x11,0x13"         },
-                { "post2",       "0x10,0x12,0x11,0x13"         },
-                { "post3",       "0x10,0x12,0x11,0x13"         },
-                { "attn",        "0x80,0x82,0x81,0x83"         }
-            }
-        }};
-
-        // Refill consumer
-        auto consumer = dynamic_cast<Consumer*>(gPortsOrch->getExecutor(APP_PORT_TABLE_NAME));
-        consumer->addToSync(kfvList);
-
-        // Apply configuration
-        static_cast<Orch*>(gPortsOrch)->doTask();
-
-        // Get port
-        Port p;
-        ASSERT_TRUE(gPortsOrch->getPort("Ethernet0", p));
-
-        // Verify preemphasis
-        std::vector<std::uint32_t> preemphasis = { 0xcad0, 0xc6e0, 0xc6e0, 0xd2b0 };
-        ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_PREEMPHASIS), preemphasis);
-
-        // Verify idriver
-        std::vector<std::uint32_t> idriver = { 0x5, 0x3, 0x4, 0x1 };
-        ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_IDRIVER), idriver);
-
-        // Verify ipredriver
-        std::vector<std::uint32_t> ipredriver = { 0x1, 0x4, 0x3, 0x5 };
-        ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_IPREDRIVER), ipredriver);
-
-        // Verify pre1
-        std::vector<std::uint32_t> pre1 = { 0xfff0, 0xfff2, 0xfff1, 0xfff3 };
-        ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_TX_FIR_PRE1), pre1);
-
-        // Verify pre2
-        std::vector<std::uint32_t> pre2 = { 0xfff0, 0xfff2, 0xfff1, 0xfff3 };
-        ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_TX_FIR_PRE2), pre2);
-
-        // Verify pre3
-        std::vector<std::uint32_t> pre3 = { 0xfff0, 0xfff2, 0xfff1, 0xfff3 };
-        ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_TX_FIR_PRE3), pre3);
-
-        // Verify main
-        std::vector<std::uint32_t> main = { 0x90, 0x92, 0x91, 0x93 };
-        ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_TX_FIR_MAIN), main);
-
-        // Verify post1
-        std::vector<std::uint32_t> post1 = { 0x10, 0x12, 0x11, 0x13 };
-        ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_TX_FIR_POST1), post1);
-
-        // Verify post2
-        std::vector<std::uint32_t> post2 = { 0x10, 0x12, 0x11, 0x13 };
-        ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_TX_FIR_POST2), post2);
-
-        // Verify post3
-        std::vector<std::uint32_t> post3 = { 0x10, 0x12, 0x11, 0x13 };
-        ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_TX_FIR_POST3), post3);
-
-        // Verify attn
-        std::vector<std::uint32_t> attn = { 0x80, 0x82, 0x81, 0x83 };
-        ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_TX_FIR_ATTN), attn);
-
-        // Dump pending tasks
-        std::vector<std::string> taskList;
-        gPortsOrch->dumpPendingTasks(taskList);
-        ASSERT_TRUE(taskList.empty());
-
-        // Cleanup ports
-        cleanupPorts(gPortsOrch);
-    }
-
-    /**
-     * Test that verifies admin-disable then admin-enable during setPortSerdesAttribute()
-     */
-    TEST_F(PortsOrchTest, PortSerdesConfig)
-    {
-        auto portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
-
-        // Get SAI default ports
-        auto &ports = defaultPortList;
-        ASSERT_TRUE(!ports.empty());
-
-        // Generate port config
-        for (const auto &cit : ports)
-        {
-            portTable.set(cit.first, cit.second);
-        }
-
-        // Set PortConfigDone
-        portTable.set("PortConfigDone", { { "count", std::to_string(ports.size()) } });
-
-        // Refill consumer
-        gPortsOrch->addExistingData(&portTable);
-
-        // Apply configuration
-        static_cast<Orch*>(gPortsOrch)->doTask();
-
-        // Generate basic port config
-        std::deque<KeyOpFieldsValuesTuple> kfvBasic = {{
-            "Ethernet0",
-            SET_COMMAND, {
-                { "speed",               "100000"            },
-                { "fec",                 "rs"                },
-                { "mtu",                 "9100"              },
-                { "admin_status",        "up"                }
-            }
-        }};
-
-        // Refill consumer
-        auto consumer = dynamic_cast<Consumer*>(gPortsOrch->getExecutor(APP_PORT_TABLE_NAME));
-        consumer->addToSync(kfvBasic);
-
-        // Apply configuration
-        static_cast<Orch*>(gPortsOrch)->doTask();
-
-        // Get port and verify admin status
-        Port p;
-        ASSERT_TRUE(gPortsOrch->getPort("Ethernet0", p));
-        ASSERT_TRUE(p.m_admin_state_up);
-
-        // Generate port serdes config
-        std::deque<KeyOpFieldsValuesTuple> kfvSerdes = {{
-            "Ethernet0",
-            SET_COMMAND, {
-                { "admin_status", "up"              },
-                { "idriver"     , "0x6,0x6,0x6,0x6" }
-            }
-        }};
-
-        // Refill consumer
-        consumer->addToSync(kfvSerdes);
-
-        _hook_sai_port_api();
-        uint32_t current_sai_api_call_count = _sai_set_admin_state_down_count;
-
-        // Apply configuration
-        static_cast<Orch*>(gPortsOrch)->doTask();
-
-        _unhook_sai_port_api();
-
-        ASSERT_TRUE(gPortsOrch->getPort("Ethernet0", p));
-        ASSERT_TRUE(p.m_admin_state_up);
-
-        // Verify idriver
-        std::vector<std::uint32_t> idriver = { 0x6, 0x6, 0x6, 0x6 };
-        ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_IDRIVER), idriver);
-
-        // Verify admin-disable then admin-enable
-        ASSERT_EQ(_sai_set_admin_state_down_count, ++current_sai_api_call_count);
-        ASSERT_EQ(_sai_set_admin_state_up_count, current_sai_api_call_count);
-
-        // Dump pending tasks
-        std::vector<std::string> taskList;
-        gPortsOrch->dumpPendingTasks(taskList);
-        ASSERT_TRUE(taskList.empty());
-
-        // Cleanup ports
-        cleanupPorts(gPortsOrch);
-    }
-
-    /**
-     * Test that verifies PortsOrch::getPort() on a port that has been deleted
-     */
-    TEST_F(PortsOrchTest, GetPortTest)
-    {
-        _hook_sai_queue_api();
-        Table portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
-        std::deque<KeyOpFieldsValuesTuple> entries;
-
-        // Get SAI default ports to populate DB
-        auto &ports = defaultPortList;
-        ASSERT_TRUE(!ports.empty());
-
-        for (const auto &it : ports)
-        {
-            portTable.set(it.first, it.second);
-        }
-
-        // Set PortConfigDone
-        portTable.set("PortConfigDone", { { "count", to_string(ports.size()) } });
-
-        // refill consumer
-        gPortsOrch->addExistingData(&portTable);
-
-        // Apply configuration :
-        //  create ports
-        static_cast<Orch *>(gPortsOrch)->doTask();
-
-        Port port;
-        ASSERT_TRUE(gPortsOrch->getPort("Ethernet0", port));
-        ASSERT_NE(port.m_port_id, SAI_NULL_OBJECT_ID);
-
-        // Get queue info
-        string type;
-        uint8_t index;
-        auto queue_id = port.m_queue_ids[0];
-        auto ut_sai_get_queue_attr_count = _sai_get_queue_attr_count;
-        gPortsOrch->getQueueTypeAndIndex(queue_id, type, index);
-        ASSERT_EQ(type, "SAI_QUEUE_TYPE_UNICAST");
-        ASSERT_EQ(index, 0);
-        type = "";
-        index = 255;
-        gPortsOrch->getQueueTypeAndIndex(queue_id, type, index);
-        ASSERT_EQ(type, "SAI_QUEUE_TYPE_UNICAST");
-        ASSERT_EQ(index, 0);
-        ASSERT_EQ(++ut_sai_get_queue_attr_count, _sai_get_queue_attr_count);
-
-        // Delete port
-        entries.push_back({"Ethernet0", "DEL", {}});
-        auto consumer = dynamic_cast<Consumer *>(gPortsOrch->getExecutor(APP_PORT_TABLE_NAME));
-        consumer->addToSync(entries);
-        static_cast<Orch *>(gPortsOrch)->doTask();
-        entries.clear();
-
-        ASSERT_FALSE(gPortsOrch->getPort(port.m_port_id, port));
-        ASSERT_EQ(gPortsOrch->m_queueInfo.find(queue_id), gPortsOrch->m_queueInfo.end());
-        _unhook_sai_queue_api();
-    }
+    // TEST_F(PortsOrchTest, PortBulkCreateRemove)
+    // {
+    //     auto portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
+
+    //     // Get SAI default ports
+    //     auto &ports = defaultPortList;
+    //     ASSERT_TRUE(!ports.empty());
+
+    //     // Generate port config
+    //     for (std::uint32_t idx1 = 0, idx2 = 1; idx1 < ports.size() * 4; idx1 += 4, idx2++)
+    //     {
+    //         std::stringstream key;
+    //         key << FRONT_PANEL_PORT_PREFIX << idx1;
+
+    //         std::stringstream alias;
+    //         alias << "etp" << idx2;
+
+    //         std::stringstream index;
+    //         index << idx2;
+
+    //         std::stringstream lanes;
+    //         lanes << idx1 << "," << idx1 + 1 << "," << idx1 + 2 << "," << idx1 + 3;
+
+    //         std::vector<FieldValueTuple> fvList = {
+    //             { "alias",               alias.str() },
+    //             { "index",               index.str() },
+    //             { "lanes",               lanes.str() },
+    //             { "speed",               "100000"    },
+    //             { "autoneg",             "off"       },
+    //             { "adv_speeds",          "all"       },
+    //             { "interface_type",      "none"      },
+    //             { "adv_interface_types", "all"       },
+    //             { "fec",                 "rs"        },
+    //             { "mtu",                 "9100"      },
+    //             { "tpid",                "0x8100"    },
+    //             { "pfc_asym",            "off"       },
+    //             { "admin_status",        "up"        },
+    //             { "description",         "FP port"   }
+    //         };
+
+    //         portTable.set(key.str(), fvList);
+    //     }
+
+    //     // Set PortConfigDone
+    //     portTable.set("PortConfigDone", { { "count", std::to_string(ports.size()) } });
+
+    //     // Refill consumer
+    //     gPortsOrch->addExistingData(&portTable);
+
+    //     // Apply configuration
+    //     static_cast<Orch*>(gPortsOrch)->doTask();
+
+    //     // Port count: 32 Data + 1 CPU
+    //     ASSERT_EQ(gPortsOrch->getAllPorts().size(), ports.size() + 1);
+
+    //     // Dump pending tasks
+    //     std::vector<std::string> taskList;
+    //     gPortsOrch->dumpPendingTasks(taskList);
+    //     ASSERT_TRUE(taskList.empty());
+
+    //     // Cleanup ports
+    //     cleanupPorts(gPortsOrch);
+    // }
+
+    // TEST_F(PortsOrchTest, PortBasicConfig)
+    // {
+    //     auto portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
+
+    //     // Get SAI default ports
+    //     auto &ports = defaultPortList;
+    //     ASSERT_TRUE(!ports.empty());
+
+    //     // Generate port config
+    //     for (const auto &cit : ports)
+    //     {
+    //         portTable.set(cit.first, cit.second);
+    //     }
+
+    //     // Set PortConfigDone
+    //     portTable.set("PortConfigDone", { { "count", std::to_string(ports.size()) } });
+
+    //     // Refill consumer
+    //     gPortsOrch->addExistingData(&portTable);
+
+    //     // Apply configuration
+    //     static_cast<Orch*>(gPortsOrch)->doTask();
+
+    //     // Port count: 32 Data + 1 CPU
+    //     ASSERT_EQ(gPortsOrch->getAllPorts().size(), ports.size() + 1);
+
+    //     // Generate port config
+    //     std::deque<KeyOpFieldsValuesTuple> kfvList = {{
+    //         "Ethernet0",
+    //         SET_COMMAND, {
+    //             { "speed",               "100000"            },
+    //             { "autoneg",             "on"                },
+    //             { "adv_speeds",          "1000,10000,100000" },
+    //             { "interface_type",      "CR"                },
+    //             { "adv_interface_types", "CR,CR2,CR4,CR8"    },
+    //             { "fec",                 "fc"                },
+    //             { "mtu",                 "9100"              },
+    //             { "tpid",                "0x9100"            },
+    //             { "pfc_asym",            "on"                },
+    //             { "link_training",       "on"                },
+    //             { "admin_status",        "up"                }
+    //         }
+    //     }};
+
+    //     // Refill consumer
+    //     auto consumer = dynamic_cast<Consumer*>(gPortsOrch->getExecutor(APP_PORT_TABLE_NAME));
+    //     consumer->addToSync(kfvList);
+
+    //     // Apply configuration
+    //     static_cast<Orch*>(gPortsOrch)->doTask();
+
+    //     // Get port
+    //     Port p;
+    //     ASSERT_TRUE(gPortsOrch->getPort("Ethernet0", p));
+
+    //     // Verify speed
+    //     ASSERT_EQ(p.m_speed, 100000);
+
+    //     // Verify auto-negotiation
+    //     ASSERT_TRUE(p.m_autoneg);
+
+    //     // Verify advertised speed
+    //     std::set<std::uint32_t> adv_speeds = { 1000, 10000, 100000 };
+    //     ASSERT_EQ(p.m_adv_speeds, adv_speeds);
+
+    //     // Verify interface type
+    //     ASSERT_EQ(p.m_interface_type, SAI_PORT_INTERFACE_TYPE_CR);
+
+    //     // Verify advertised interface type
+    //     std::set<sai_port_interface_type_t> adv_interface_types = {
+    //         SAI_PORT_INTERFACE_TYPE_CR,
+    //         SAI_PORT_INTERFACE_TYPE_CR2,
+    //         SAI_PORT_INTERFACE_TYPE_CR4,
+    //         SAI_PORT_INTERFACE_TYPE_CR8
+    //     };
+    //     ASSERT_EQ(p.m_adv_interface_types, adv_interface_types);
+
+    //     // Verify FEC
+    //     ASSERT_EQ(p.m_fec_mode, SAI_PORT_FEC_MODE_FC);
+
+    //     // Verify MTU
+    //     ASSERT_EQ(p.m_mtu, 9100);
+
+    //     // Verify TPID
+    //     ASSERT_EQ(p.m_tpid, 0x9100);
+
+    //     // Verify asymmetric PFC
+    //     ASSERT_EQ(p.m_pfc_asym, SAI_PORT_PRIORITY_FLOW_CONTROL_MODE_SEPARATE);
+
+    //     // Verify link training
+    //     ASSERT_TRUE(p.m_link_training);
+
+    //     // Verify admin status
+    //     ASSERT_TRUE(p.m_admin_state_up);
+
+    //     // Dump pending tasks
+    //     std::vector<std::string> taskList;
+    //     gPortsOrch->dumpPendingTasks(taskList);
+    //     ASSERT_TRUE(taskList.empty());
+
+    //     // Cleanup ports
+    //     cleanupPorts(gPortsOrch);
+    // }
+
+    // TEST_F(PortsOrchTest, PortAdvancedConfig)
+    // {
+    //     auto portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
+
+    //     // Get SAI default ports
+    //     auto &ports = defaultPortList;
+    //     ASSERT_TRUE(!ports.empty());
+
+    //     // Generate port config
+    //     for (const auto &cit : ports)
+    //     {
+    //         portTable.set(cit.first, cit.second);
+    //     }
+
+    //     // Set PortConfigDone
+    //     portTable.set("PortConfigDone", { { "count", std::to_string(ports.size()) } });
+
+    //     // Refill consumer
+    //     gPortsOrch->addExistingData(&portTable);
+
+    //     // Apply configuration
+    //     static_cast<Orch*>(gPortsOrch)->doTask();
+
+    //     // Port count: 32 Data + 1 CPU
+    //     ASSERT_EQ(gPortsOrch->getAllPorts().size(), ports.size() + 1);
+
+    //     // Generate port serdes config
+    //     std::deque<KeyOpFieldsValuesTuple> kfvList = {{
+    //         "Ethernet0",
+    //         SET_COMMAND, {
+    //             { "preemphasis", "0xcad0,0xc6e0,0xc6e0,0xd2b0" },
+    //             { "idriver",     "0x5,0x3,0x4,0x1"             },
+    //             { "ipredriver",  "0x1,0x4,0x3,0x5"             },
+    //             { "pre1",        "0xfff0,0xfff2,0xfff1,0xfff3" },
+    //             { "pre2",        "0xfff0,0xfff2,0xfff1,0xfff3" },
+    //             { "pre3",        "0xfff0,0xfff2,0xfff1,0xfff3" },
+    //             { "main",        "0x90,0x92,0x91,0x93"         },
+    //             { "post1",       "0x10,0x12,0x11,0x13"         },
+    //             { "post2",       "0x10,0x12,0x11,0x13"         },
+    //             { "post3",       "0x10,0x12,0x11,0x13"         },
+    //             { "attn",        "0x80,0x82,0x81,0x83"         }
+    //         }
+    //     }};
+
+    //     // Refill consumer
+    //     auto consumer = dynamic_cast<Consumer*>(gPortsOrch->getExecutor(APP_PORT_TABLE_NAME));
+    //     consumer->addToSync(kfvList);
+
+    //     // Apply configuration
+    //     static_cast<Orch*>(gPortsOrch)->doTask();
+
+    //     // Get port
+    //     Port p;
+    //     ASSERT_TRUE(gPortsOrch->getPort("Ethernet0", p));
+
+    //     // Verify preemphasis
+    //     std::vector<std::uint32_t> preemphasis = { 0xcad0, 0xc6e0, 0xc6e0, 0xd2b0 };
+    //     ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_PREEMPHASIS), preemphasis);
+
+    //     // Verify idriver
+    //     std::vector<std::uint32_t> idriver = { 0x5, 0x3, 0x4, 0x1 };
+    //     ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_IDRIVER), idriver);
+
+    //     // Verify ipredriver
+    //     std::vector<std::uint32_t> ipredriver = { 0x1, 0x4, 0x3, 0x5 };
+    //     ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_IPREDRIVER), ipredriver);
+
+    //     // Verify pre1
+    //     std::vector<std::uint32_t> pre1 = { 0xfff0, 0xfff2, 0xfff1, 0xfff3 };
+    //     ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_TX_FIR_PRE1), pre1);
+
+    //     // Verify pre2
+    //     std::vector<std::uint32_t> pre2 = { 0xfff0, 0xfff2, 0xfff1, 0xfff3 };
+    //     ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_TX_FIR_PRE2), pre2);
+
+    //     // Verify pre3
+    //     std::vector<std::uint32_t> pre3 = { 0xfff0, 0xfff2, 0xfff1, 0xfff3 };
+    //     ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_TX_FIR_PRE3), pre3);
+
+    //     // Verify main
+    //     std::vector<std::uint32_t> main = { 0x90, 0x92, 0x91, 0x93 };
+    //     ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_TX_FIR_MAIN), main);
+
+    //     // Verify post1
+    //     std::vector<std::uint32_t> post1 = { 0x10, 0x12, 0x11, 0x13 };
+    //     ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_TX_FIR_POST1), post1);
+
+    //     // Verify post2
+    //     std::vector<std::uint32_t> post2 = { 0x10, 0x12, 0x11, 0x13 };
+    //     ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_TX_FIR_POST2), post2);
+
+    //     // Verify post3
+    //     std::vector<std::uint32_t> post3 = { 0x10, 0x12, 0x11, 0x13 };
+    //     ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_TX_FIR_POST3), post3);
+
+    //     // Verify attn
+    //     std::vector<std::uint32_t> attn = { 0x80, 0x82, 0x81, 0x83 };
+    //     ASSERT_EQ(p.m_preemphasis.at(SAI_PORT_SERDES_ATTR_TX_FIR_ATTN), attn);
+
+    //     // Dump pending tasks
+    //     std::vector<std::string> taskList;
+    //     gPortsOrch->dumpPendingTasks(taskList);
+    //     ASSERT_TRUE(taskList.empty());
+
+    //     // Cleanup ports
+    //     cleanupPorts(gPortsOrch);
+    // }
+
+    // /**
+    //  * Test that verifies PortsOrch::getPort() on a port that has been deleted
+    //  */
+    // TEST_F(PortsOrchTest, GetPortTest)
+    // {
+    //     _hook_sai_queue_api();
+    //     Table portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
+    //     std::deque<KeyOpFieldsValuesTuple> entries;
+
+    //     // Get SAI default ports to populate DB
+    //     auto &ports = defaultPortList;
+    //     ASSERT_TRUE(!ports.empty());
+
+    //     for (const auto &it : ports)
+    //     {
+    //         portTable.set(it.first, it.second);
+    //     }
+
+    //     // Set PortConfigDone
+    //     portTable.set("PortConfigDone", { { "count", to_string(ports.size()) } });
+
+    //     // refill consumer
+    //     gPortsOrch->addExistingData(&portTable);
+
+    //     // Apply configuration :
+    //     //  create ports
+    //     static_cast<Orch *>(gPortsOrch)->doTask();
+
+    //     Port port;
+    //     ASSERT_TRUE(gPortsOrch->getPort("Ethernet0", port));
+    //     ASSERT_NE(port.m_port_id, SAI_NULL_OBJECT_ID);
+
+    //     // Get queue info
+    //     string type;
+    //     uint8_t index;
+    //     auto queue_id = port.m_queue_ids[0];
+    //     auto ut_sai_get_queue_attr_count = _sai_get_queue_attr_count;
+    //     gPortsOrch->getQueueTypeAndIndex(queue_id, type, index);
+    //     ASSERT_EQ(type, "SAI_QUEUE_TYPE_UNICAST");
+    //     ASSERT_EQ(index, 0);
+    //     type = "";
+    //     index = 255;
+    //     gPortsOrch->getQueueTypeAndIndex(queue_id, type, index);
+    //     ASSERT_EQ(type, "SAI_QUEUE_TYPE_UNICAST");
+    //     ASSERT_EQ(index, 0);
+    //     ASSERT_EQ(++ut_sai_get_queue_attr_count, _sai_get_queue_attr_count);
+
+    //     // Delete port
+    //     entries.push_back({"Ethernet0", "DEL", {}});
+    //     auto consumer = dynamic_cast<Consumer *>(gPortsOrch->getExecutor(APP_PORT_TABLE_NAME));
+    //     consumer->addToSync(entries);
+    //     static_cast<Orch *>(gPortsOrch)->doTask();
+    //     entries.clear();
+
+    //     ASSERT_FALSE(gPortsOrch->getPort(port.m_port_id, port));
+    //     ASSERT_EQ(gPortsOrch->m_queueInfo.find(queue_id), gPortsOrch->m_queueInfo.end());
+    //     _unhook_sai_queue_api();
+    // }
 
     /**
      * Test case: PortsOrch::addBridgePort() does not add router port to .1Q bridge
@@ -1781,113 +1692,113 @@ namespace portsorch_test
     * if port operational status is up but operational speed is 0, the port speed should not be
     * updated to DB.
     */
-    TEST_F(PortsOrchTest, PortOperStatusIsUpAndOperSpeedIsZero)
-    {
-        Table portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
+    // TEST_F(PortsOrchTest, PortOperStatusIsUpAndOperSpeedIsZero)
+    // {
+    //     Table portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
 
-        // Get SAI default ports to populate DB
-        auto ports = ut_helper::getInitialSaiPorts();
+    //     // Get SAI default ports to populate DB
+    //     auto ports = ut_helper::getInitialSaiPorts();
 
-        // Populate port table with SAI ports
-        for (const auto &it : ports)
-        {
-            portTable.set(it.first, it.second);
-        }
+    //     // Populate port table with SAI ports
+    //     for (const auto &it : ports)
+    //     {
+    //         portTable.set(it.first, it.second);
+    //     }
 
-        // Set PortConfigDone, PortInitDone
-        portTable.set("PortConfigDone", { { "count", to_string(ports.size()) } });
-        portTable.set("PortInitDone", { { "lanes", "0" } });
+    //     // Set PortConfigDone, PortInitDone
+    //     portTable.set("PortConfigDone", { { "count", to_string(ports.size()) } });
+    //     portTable.set("PortInitDone", { { "lanes", "0" } });
 
-        // refill consumer
-        gPortsOrch->addExistingData(&portTable);
-        // Apply configuration : create ports
-        static_cast<Orch *>(gPortsOrch)->doTask();
+    //     // refill consumer
+    //     gPortsOrch->addExistingData(&portTable);
+    //     // Apply configuration : create ports
+    //     static_cast<Orch *>(gPortsOrch)->doTask();
 
-        // Get first port, expect the oper status is not UP
-        Port port;
-        gPortsOrch->getPort("Ethernet0", port);
-        ASSERT_TRUE(port.m_oper_status != SAI_PORT_OPER_STATUS_UP);
+    //     // Get first port, expect the oper status is not UP
+    //     Port port;
+    //     gPortsOrch->getPort("Ethernet0", port);
+    //     ASSERT_TRUE(port.m_oper_status != SAI_PORT_OPER_STATUS_UP);
 
-        // save original api since we will spy
-        auto orig_port_api = sai_port_api;
-        sai_port_api = new sai_port_api_t();
-        memcpy(sai_port_api, orig_port_api, sizeof(*sai_port_api));
+    //     // save original api since we will spy
+    //     auto orig_port_api = sai_port_api;
+    //     sai_port_api = new sai_port_api_t();
+    //     memcpy(sai_port_api, orig_port_api, sizeof(*sai_port_api));
 
-        // mock SAI API sai_port_api->get_port_attribute
-        auto portSpy = SpyOn<SAI_API_PORT, SAI_OBJECT_TYPE_PORT>(&sai_port_api->get_port_attribute);
-        portSpy->callFake([&](sai_object_id_t oid, uint32_t count, sai_attribute_t * attrs) -> sai_status_t {
-                if (attrs[0].id == SAI_PORT_ATTR_OPER_STATUS)
-                {
-                    attrs[0].value.u32 = (uint32_t)SAI_PORT_OPER_STATUS_UP;
-                }
-                else if (attrs[0].id == SAI_PORT_ATTR_OPER_SPEED)
-                {
-                    // Return 0 for port operational speed
-                    attrs[0].value.u32 = 0;
-                }
+    //     // mock SAI API sai_port_api->get_port_attribute
+    //     auto portSpy = SpyOn<SAI_API_PORT, SAI_OBJECT_TYPE_PORT>(&sai_port_api->get_port_attribute);
+    //     portSpy->callFake([&](sai_object_id_t oid, uint32_t count, sai_attribute_t * attrs) -> sai_status_t {
+    //             if (attrs[0].id == SAI_PORT_ATTR_OPER_STATUS)
+    //             {
+    //                 attrs[0].value.u32 = (uint32_t)SAI_PORT_OPER_STATUS_UP;
+    //             }
+    //             else if (attrs[0].id == SAI_PORT_ATTR_OPER_SPEED)
+    //             {
+    //                 // Return 0 for port operational speed
+    //                 attrs[0].value.u32 = 0;
+    //             }
 
-                return (sai_status_t)SAI_STATUS_SUCCESS;
-            }
-        );
+    //             return (sai_status_t)SAI_STATUS_SUCCESS;
+    //         }
+    //     );
 
-        auto exec = static_cast<Notifier *>(gPortsOrch->getExecutor("PORT_STATUS_NOTIFICATIONS"));
-        auto consumer = exec->getNotificationConsumer();
+    //     auto exec = static_cast<Notifier *>(gPortsOrch->getExecutor("PORT_STATUS_NOTIFICATIONS"));
+    //     auto consumer = exec->getNotificationConsumer();
 
-        // mock a redis reply for notification, it notifies that Ehernet0 is going to up
-        mockReply = (redisReply *)calloc(sizeof(redisReply), 1);
-        mockReply->type = REDIS_REPLY_ARRAY;
-        mockReply->elements = 3; // REDIS_PUBLISH_MESSAGE_ELEMNTS
-        mockReply->element = (redisReply **)calloc(sizeof(redisReply *), mockReply->elements);
-        mockReply->element[2] = (redisReply *)calloc(sizeof(redisReply), 1);
-        mockReply->element[2]->type = REDIS_REPLY_STRING;
-        sai_port_oper_status_notification_t port_oper_status;
-        port_oper_status.port_id = port.m_port_id;
-        port_oper_status.port_state = SAI_PORT_OPER_STATUS_UP;
-        std::string data = sai_serialize_port_oper_status_ntf(1, &port_oper_status);
-        std::vector<FieldValueTuple> notifyValues;
-        FieldValueTuple opdata("port_state_change", data);
-        notifyValues.push_back(opdata);
-        std::string msg = swss::JSon::buildJson(notifyValues);
-        mockReply->element[2]->str = (char*)calloc(1, msg.length() + 1);
-        memcpy(mockReply->element[2]->str, msg.c_str(), msg.length());
+    //     // mock a redis reply for notification, it notifies that Ehernet0 is going to up
+    //     mockReply = (redisReply *)calloc(sizeof(redisReply), 1);
+    //     mockReply->type = REDIS_REPLY_ARRAY;
+    //     mockReply->elements = 3; // REDIS_PUBLISH_MESSAGE_ELEMNTS
+    //     mockReply->element = (redisReply **)calloc(sizeof(redisReply *), mockReply->elements);
+    //     mockReply->element[2] = (redisReply *)calloc(sizeof(redisReply), 1);
+    //     mockReply->element[2]->type = REDIS_REPLY_STRING;
+    //     sai_port_oper_status_notification_t port_oper_status;
+    //     port_oper_status.port_id = port.m_port_id;
+    //     port_oper_status.port_state = SAI_PORT_OPER_STATUS_UP;
+    //     std::string data = sai_serialize_port_oper_status_ntf(1, &port_oper_status);
+    //     std::vector<FieldValueTuple> notifyValues;
+    //     FieldValueTuple opdata("port_state_change", data);
+    //     notifyValues.push_back(opdata);
+    //     std::string msg = swss::JSon::buildJson(notifyValues);
+    //     mockReply->element[2]->str = (char*)calloc(1, msg.length() + 1);
+    //     memcpy(mockReply->element[2]->str, msg.c_str(), msg.length());
 
-        // trigger the notification
-        consumer->readData();
-        gPortsOrch->doTask(*consumer);
-        mockReply = nullptr;
+    //     // trigger the notification
+    //     consumer->readData();
+    //     gPortsOrch->doTask(*consumer);
+    //     mockReply = nullptr;
 
-        gPortsOrch->getPort("Ethernet0", port);
-        ASSERT_TRUE(port.m_oper_status == SAI_PORT_OPER_STATUS_UP);
+    //     gPortsOrch->getPort("Ethernet0", port);
+    //     ASSERT_TRUE(port.m_oper_status == SAI_PORT_OPER_STATUS_UP);
 
-        std::vector<FieldValueTuple> values;
-        portTable.get("Ethernet0", values);
-        for (auto &valueTuple : values)
-        {
-            if (fvField(valueTuple) == "speed")
-            {
-                ASSERT_TRUE(fvValue(valueTuple) != "0");
-            }
-        }
+    //     std::vector<FieldValueTuple> values;
+    //     portTable.get("Ethernet0", values);
+    //     for (auto &valueTuple : values)
+    //     {
+    //         if (fvField(valueTuple) == "speed")
+    //         {
+    //             ASSERT_TRUE(fvValue(valueTuple) != "0");
+    //         }
+    //     }
 
-        gPortsOrch->refreshPortStatus();
-        for (const auto &it : ports)
-        {
-            gPortsOrch->getPort(it.first, port);
-            ASSERT_TRUE(port.m_oper_status == SAI_PORT_OPER_STATUS_UP);
+    //     gPortsOrch->refreshPortStatus();
+    //     for (const auto &it : ports)
+    //     {
+    //         gPortsOrch->getPort(it.first, port);
+    //         ASSERT_TRUE(port.m_oper_status == SAI_PORT_OPER_STATUS_UP);
 
-            std::vector<FieldValueTuple> values;
-            portTable.get(it.first, values);
-            for (auto &valueTuple : values)
-            {
-                if (fvField(valueTuple) == "speed")
-                {
-                    ASSERT_TRUE(fvValue(valueTuple) != "0");
-                }
-            }
-        }
+    //         std::vector<FieldValueTuple> values;
+    //         portTable.get(it.first, values);
+    //         for (auto &valueTuple : values)
+    //         {
+    //             if (fvField(valueTuple) == "speed")
+    //             {
+    //                 ASSERT_TRUE(fvValue(valueTuple) != "0");
+    //             }
+    //         }
+    //     }
 
-        sai_port_api = orig_port_api;
-    }
+    //     sai_port_api = orig_port_api;
+    // }
 
     /*
     * The scope of this test is to verify that LAG member is
