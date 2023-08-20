@@ -326,6 +326,9 @@ private:
     NotificationConsumer* m_portStatusNotificationConsumer;
     NotificationConsumer* m_portHostTxReadyNotificationConsumer;
 
+    bool fec_override_sup = false;
+    bool oper_fec_sup = false;
+
     swss::SelectableTimer *m_port_state_poller = nullptr;
 
     bool m_saiHwTxSignalSupported = false;

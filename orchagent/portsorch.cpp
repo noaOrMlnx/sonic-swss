@@ -401,7 +401,7 @@ static void getPortSerdesAttr(PortSerdesAttrMap_t &map, const PortConfig &port)
 
     if (port.serdes.ob_m2lp.is_set)
     {
-    
+
         map[SAI_PORT_SERDES_ATTR_TX_PAM4_RATIO] = port.serdes.ob_m2lp.value;
     }
 
@@ -430,7 +430,7 @@ static void getPortSerdesAttr(PortSerdesAttrMap_t &map, const PortConfig &port)
         map[SAI_PORT_SERDES_ATTR_TX_NMOS_VLTG_REG] = port.serdes.regn_bfm1n.value;
     }
 
-    
+
 }
 
 // Port OA ------------------------------------------------------------------------------------------------------------
@@ -600,6 +600,34 @@ PortsOrch::PortsOrch(DBConnector *db, DBConnector *stateDb, vector<table_name_wi
     if (sai_query_attribute_capability(gSwitchId, SAI_OBJECT_TYPE_PORT,
                                             SAI_PORT_ATTR_HOST_TX_SIGNAL_ENABLE,
                                             &capability) == SAI_STATUS_SUCCESS)
+    {
+        if (capability.create_implemented == true)
+        {
+            SWSS_LOG_DEBUG("SAI_PORT_ATTR_HOST_TX_SIGNAL_ENABLE is true");
+            m_saiHwTxSignalSupported = true;
+        }
+    }
+
+    if (sai_query_attribute_capability(gSwitchId, SAI_OBJECT_TYPE_SWITCH,
+                                            SAI_SWITCH_ATTR_PORT_HOST_TX_READY_NOTIFY,
+                                            &capability) == SAI_STATUS_SUCCESS)
+    {
+        if (capability.create_implemented == true)
+        {
+            SWSS_LOG_DEBUG("SAI_SWITCH_ATTR_PORT_HOST_TX_READY_NOTIFY is true");
+            m_saiTxReadyNotifySupported = true;
+        }
+    }
+
+    if (m_saiHwTxSignalSupported && m_saiTxReadyNotifySupported)
+    {
+        SWSS_LOG_DEBUG("m_cmisModuleAsicSyncSupported is true");
+        m_cmisModuleAsicSyncSupported = true;
+        auto transceiverInfoTableName = STATE_TRANSCEIVER_INFO_TABLE_NAME;
+        Orch::addExecutor(new Consumer(new SubscriberStateTable(stateDb, transceiverInfoTableName, TableConsumable::DEFAULT_POP_BATCH_SIZE, 0), this, transceiverInfoTableName));
+    }
+
+    if (gMySwitchType != "dpu")
     {
         if (capability.create_implemented == true)
         {
@@ -872,7 +900,7 @@ bool PortsOrch::addPortBulk(const std::vector<PortConfig> &portList)
             attr.value.booldata = false;
             attrList.push_back(attr);
         }
-        
+
         attrDataList.push_back(attrList);
         attrCountList.push_back(static_cast<std::uint32_t>(attrDataList.back().size()));
         attrPtrList.push_back(attrDataList.back().data());
@@ -1529,7 +1557,6 @@ bool PortsOrch::setPortAdminStatus(Port &port, bool state)
 void PortsOrch::setHostTxReady(sai_object_id_t portId, std::string status)
 {
     Port p;
-    SWSS_LOG_ERROR("NOA inside setHostTxReady function. status = %s", status.c_str());
 
     if (!getPort(portId, p))
     {
@@ -1537,6 +1564,7 @@ void PortsOrch::setHostTxReady(sai_object_id_t portId, std::string status)
         return;
     }
 
+    SWSS_LOG_NOTICE("Setting host_tx_ready status = %s, port_id = 0x%" PRIx64, status.c_str(), portId);
     m_portStateTable.hset(p.m_alias, "host_tx_ready", status);
 }
 
@@ -1568,7 +1596,6 @@ bool PortsOrch::getPortAdminStatus(sai_object_id_t id, bool &up)
 bool PortsOrch::getPortHostTxReady(const Port& port, bool &hostTxReadyVal)
 {
     SWSS_LOG_ENTER();
-    SWSS_LOG_ERROR("NOA inside getPortHostTxReady function");
     sai_attribute_t attr;
     attr.id = SAI_PORT_ATTR_HOST_TX_READY_STATUS;
 
@@ -4541,7 +4568,6 @@ void PortsOrch::doTransceiverInfoTableTask(Consumer &consumer)
 
     */
     SWSS_LOG_ENTER();
-    SWSS_LOG_ERROR("NOA inside doTransceiverInfoTableTask");
     string table_name = consumer.getTableName();
 
     auto it = consumer.m_toSync.begin();
@@ -4553,36 +4579,36 @@ void PortsOrch::doTransceiverInfoTableTask(Consumer &consumer)
 
         if (op == SET_COMMAND)
         {
-            SWSS_LOG_ERROR("NOA doTransceiverInfoTableTask set command");
-            SWSS_LOG_ERROR("NOA alias is %s", alias.c_str());
+            SWSS_LOG_DEBUG("TRANSCEIVER_INFO table has changed - SET command for port %s", alias.c_str());
+
             if (m_pluggedModulesPort.find(alias) == m_pluggedModulesPort.end())
             {
                 m_pluggedModulesPort[alias] = m_portList[alias];
-                // SWSS_LOG_ERROR("NOA setting host tx signal to false and then true - workaround to avoid fw bug");
-                // setSaiHostTxSignal(m_pluggedModulesPort[alias], false);
-                SWSS_LOG_ERROR("NOA setting host tx signal = true");
+
+                SWSS_LOG_DEBUG("Setting host_tx_signal allow for port %s", alias.c_str());
                 setSaiHostTxSignal(m_pluggedModulesPort[alias], true);
-                SWSS_LOG_ERROR("NOA after setSaiHostTxSignal");
             }
         }
         else if (op == DEL_COMMAND)
         {
-            SWSS_LOG_ERROR("NOA doTransceiverInfoTableTask del command");
+            SWSS_LOG_DEBUG("TRANSCEIVER_INFO table has changed - DEL command for port %s", alias.c_str());
+
             Port p;
             if (m_pluggedModulesPort.find(alias) != m_pluggedModulesPort.end())
             {
                 p = m_pluggedModulesPort[alias];
                 m_pluggedModulesPort.erase(alias);
             }
+            SWSS_LOG_DEBUG("Setting host_tx_signal NOT allow for port %s", alias.c_str());
             setSaiHostTxSignal(p, false);
         }
+
         it = consumer.m_toSync.erase(it);
     }
 }
 
 bool PortsOrch::setSaiHostTxSignal(Port port, bool enable)
 {
-    // SWSS_LOG_ERROR("NOA inside setSaiHostTxSignal 0x%" PRIx64, port.m_port_id);
     sai_attribute_t attr;
     attr.id = SAI_PORT_ATTR_HOST_TX_SIGNAL_ENABLE;
     attr.value.booldata = enable;
@@ -5312,13 +5338,13 @@ bool PortsOrch::initializePort(Port &port)
             SWSS_LOG_ERROR("Failed to get host_tx_ready value from SAI to Port %" PRIx64 , port.m_port_id);
         }
         /* set value to state DB */
-        
+
         string hostTxReadyStr = "false";
         if (hostTxReadyVal)
         {
-            SWSS_LOG_ERROR("NOA host tx ready value from getPortHostTxReady is true");
             hostTxReadyStr = "true";
         }
+        SWSS_LOG_DEBUG("Received host_tx_ready current status: port_id: 0x%" PRIx64 " status: %s", port.m_port_id, hostTxReadyStr.c_str());
         m_portStateTable.hset(port.m_alias, "host_tx_ready", hostTxReadyStr);
     }
 
@@ -7345,13 +7371,13 @@ void PortsOrch::doTask(NotificationConsumer &consumer)
         sai_deserialize_free_port_oper_status_ntf(count, portoperstatus);
     }
     else if (&consumer == m_portHostTxReadyNotificationConsumer && op == "port_host_tx_ready")
-    {        
+    {
         sai_object_id_t port_id;
         sai_object_id_t switch_id;
         sai_port_host_tx_ready_status_t host_tx_ready_status;
 
         sai_deserialize_port_host_tx_ready_ntf(data, switch_id, port_id, host_tx_ready_status);
-        SWSS_LOG_ERROR("NOA inside doTask of notification - port host tx ready notification!!! port id is %" PRIx64, port_id);
+        SWSS_LOG_DEBUG("Recieved host_tx_ready notification for port 0x%" PRIx64, port_id);
 
         if (host_tx_ready_status == SAI_PORT_HOST_TX_READY_STATUS_READY)
         {

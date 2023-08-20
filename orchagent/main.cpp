@@ -368,7 +368,7 @@ int main(int argc, char **argv)
             // Disable all recordings if atoi() fails i.e. returns 0 due to
             // invalid command line argument.
             record_type = atoi(optarg);
-            if (record_type < 0 || record_type > 7) 
+            if (record_type < 0 || record_type > 7)
             {
                 usage();
                 exit(EXIT_FAILURE);
@@ -474,14 +474,6 @@ int main(int argc, char **argv)
     attr.id = SAI_SWITCH_ATTR_PORT_HOST_TX_READY_NOTIFY;
     attr.value.ptr = (void *)on_port_host_tx_ready;
     attrs.push_back(attr);
-
-    // Instantiate database connectors
-    DBConnector appl_db("APPL_DB", 0);
-    DBConnector config_db("CONFIG_DB", 0);
-    DBConnector state_db("STATE_DB", 0);
-
-    // Get switch_type
-    getCfgSwitchType(&config_db, gMySwitchType);
 
     if (gMySwitchType != "fabric" && gMacAddress)
     {
