@@ -603,10 +603,15 @@ bool PortHelper::parsePortLinkTraining(PortConfig &port, const std::string &fiel
 template<typename T>
 bool PortHelper::parsePortSerdes(T &serdes, const std::string &field, const std::string &value) const
 {
+    SWSS_LOG_ERROR(" --- tomer --- entering parsePortSerdes()");
+    SWSS_LOG_ERROR(" --- tomer --- Trying to set field: [%s] to value: [%s]", field.c_str(), value.c_str());
+
+
     SWSS_LOG_ENTER();
 
     if (value.empty())
     {
+        SWSS_LOG_ERROR(" --- tomer --- Failed to parse field(%s): empty string is prohibited", field.c_str());
         SWSS_LOG_ERROR("Failed to parse field(%s): empty string is prohibited", field.c_str());
         return false;
     }
@@ -617,16 +622,20 @@ bool PortHelper::parsePortSerdes(T &serdes, const std::string &field, const std:
     {
         for (const auto &cit : serdesList)
         {
+            SWSS_LOG_ERROR(" --- tomer --- adding to the vector of the field: %s the value: (%s)", field.c_str(), cit.c_str());
             serdes.value.push_back(toUInt32(cit));
         }
     }
     catch (const std::exception &e)
     {
+        SWSS_LOG_ERROR(" --- tomer --- Failed to parse field(%s): %s", field.c_str(), e.what());
         SWSS_LOG_ERROR("Failed to parse field(%s): %s", field.c_str(), e.what());
         return false;
     }
 
     serdes.is_set = true;
+
+    SWSS_LOG_ERROR(" --- tomer --- parsePortSerdes() finished successfully");
 
     return true;
 }
@@ -642,6 +651,14 @@ template bool PortHelper::parsePortSerdes(decltype(PortSerdes_t::post1) &serdes,
 template bool PortHelper::parsePortSerdes(decltype(PortSerdes_t::post2) &serdes, const std::string &field, const std::string &value) const;
 template bool PortHelper::parsePortSerdes(decltype(PortSerdes_t::post3) &serdes, const std::string &field, const std::string &value) const;
 template bool PortHelper::parsePortSerdes(decltype(PortSerdes_t::attn) &serdes, const std::string &field, const std::string &value) const;
+template bool PortHelper::parsePortSerdes(decltype(PortSerdes_t::ob_m2lp) &serdes, const std::string &field, const std::string &value) const;
+template bool PortHelper::parsePortSerdes(decltype(PortSerdes_t::ob_alev_out) &serdes, const std::string &field, const std::string &value) const;
+template bool PortHelper::parsePortSerdes(decltype(PortSerdes_t::obplev) &serdes, const std::string &field, const std::string &value) const;
+template bool PortHelper::parsePortSerdes(decltype(PortSerdes_t::obnlev) &serdes, const std::string &field, const std::string &value) const;
+template bool PortHelper::parsePortSerdes(decltype(PortSerdes_t::regn_bfm1p) &serdes, const std::string &field, const std::string &value) const;
+template bool PortHelper::parsePortSerdes(decltype(PortSerdes_t::regn_bfm1n) &serdes, const std::string &field, const std::string &value) const;
+
+
 
 bool PortHelper::parsePortRole(PortConfig &port, const std::string &field, const std::string &value) const
 {
@@ -701,6 +718,8 @@ bool PortHelper::parsePortDescription(PortConfig &port, const std::string &field
 
 bool PortHelper::parsePortConfig(PortConfig &port) const
 {
+    SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: entering parsePortConfig():");
+    
     SWSS_LOG_ENTER();
 
     for (const auto &cit : port.fieldValueMap)
@@ -712,6 +731,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortAlias(port, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortSerdes(PORT_ALIAS) failed");
                 return false;
             }
         }
@@ -719,6 +739,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortIndex(port, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortIndex(PORT_INDEX) failed");
                 return false;
             }
         }
@@ -726,6 +747,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortLanes(port, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortLanes(PORT_LANES) failed");
                 return false;
             }
         }
@@ -733,6 +755,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortSpeed(port, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortSpeed(PORT_SPEED) failed");
                 return false;
             }
         }
@@ -740,6 +763,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortAutoneg(port, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortAutoneg(PORT_AUTONEG) failed");
                 return false;
             }
         }
@@ -747,6 +771,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortAdvSpeeds(port, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortAdvSpeeds(PORT_ADV_SPEEDS) failed");
                 return false;
             }
         }
@@ -754,6 +779,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortInterfaceType(port, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortInterfaceType(PORT_INTERFACE_TYPE) failed");
                 return false;
             }
         }
@@ -761,6 +787,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortAdvInterfaceTypes(port, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortAdvInterfaceTypes(PORT_ADV_INTERFACE_TYPES) failed");
                 return false;
             }
         }
@@ -768,6 +795,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortFec(port, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortFec(PORT_FEC) failed");
                 return false;
             }
         }
@@ -775,6 +803,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortMtu(port, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortMtu(PORT_MTU) failed");
                 return false;
             }
         }
@@ -782,6 +811,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortTpid(port, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortTpid(PORT_TPID) failed");
                 return false;
             }
         }
@@ -789,6 +819,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortPfcAsym(port, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortPfcAsym(PORT_PFC_ASYM) failed");
                 return false;
             }
         }
@@ -796,6 +827,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortLearnMode(port, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortLearnMode(PORT_LEARN_MODE) failed");
                 return false;
             }
         }
@@ -803,6 +835,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortLinkTraining(port, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortLinkTraining(PORT_LINK_TRAINING) failed");
                 return false;
             }
         }
@@ -810,6 +843,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortSerdes(port.serdes.preemphasis, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortSerdes(PORT_PREEMPHASIS) failed");
                 return false;
             }
         }
@@ -817,6 +851,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortSerdes(port.serdes.idriver, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortSerdes(PORT_IDRIVER) failed");
                 return false;
             }
         }
@@ -824,6 +859,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortSerdes(port.serdes.ipredriver, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortSerdes(PORT_IPREDRIVER) failed");
                 return false;
             }
         }
@@ -831,6 +867,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortSerdes(port.serdes.pre1, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortSerdes(PORT_PRE1) failed");
                 return false;
             }
         }
@@ -838,6 +875,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortSerdes(port.serdes.pre2, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortSerdes(PORT_PRE2) failed");
                 return false;
             }
         }
@@ -845,6 +883,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortSerdes(port.serdes.pre3, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortSerdes(PORT_PRE3) failed");
                 return false;
             }
         }
@@ -852,6 +891,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortSerdes(port.serdes.main, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortSerdes(PORT_MAIN) failed");
                 return false;
             }
         }
@@ -859,6 +899,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortSerdes(port.serdes.post1, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortSerdes(PORT_POST1) failed");
                 return false;
             }
         }
@@ -866,6 +907,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortSerdes(port.serdes.post2, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortSerdes(PORT_POST2) failed");
                 return false;
             }
         }
@@ -873,6 +915,7 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortSerdes(port.serdes.post3, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortSerdes(PORT_POST3) failed");
                 return false;
             }
         }
@@ -880,9 +923,81 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
         {
             if (!this->parsePortSerdes(port.serdes.attn, field, value))
             {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortSerdes(PORT_ATTN) failed");
                 return false;
             }
         }
+
+
+
+        // here
+        else if (field == PORT_OB_M2LP)
+        {
+            SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: new SI value detected: %s", field.c_str());
+            if (!this->parsePortSerdes(port.serdes.ob_m2lp, field, value))
+            {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortSerdes(PORT_OB_M2LP) failed");
+                return false;
+            }
+        }
+
+        else if (field == PORT_OB_ALEV_OUT)
+        {
+            SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: new SI value detected: %s", field.c_str());
+            if (!this->parsePortSerdes(port.serdes.ob_alev_out, field, value))
+            {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortSerdes(PORT_OB_ALEV_OUT) failed");
+                return false;
+            }
+        }
+
+        else if (field == PORT_OBPLEV)
+        {
+            SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: new SI value detected: %s", field.c_str());
+            if (!this->parsePortSerdes(port.serdes.obplev, field, value))
+            {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortSerdes(PORT_OBPLEV) failed");
+                return false;
+            }
+        }
+
+        else if (field == PORT_OBNLEV)
+        {
+            SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: new SI value detected: %s", field.c_str());
+            if (!this->parsePortSerdes(port.serdes.obnlev, field, value))
+            {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortSerdes(PORT_OBNLEV) failed");
+                return false;
+            }
+        }
+
+        else if (field == PORT_REGN_BFM1P)
+        {
+            SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: new SI value detected: %s", field.c_str());
+            if (!this->parsePortSerdes(port.serdes.regn_bfm1p, field, value))
+            {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortSerdes(PORT_REGN_BFM1P) failed");
+                return false;
+            }
+        }
+
+        else if (field == PORT_REGN_BFM1N)
+        {
+            SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: new SI value detected: %s", field.c_str());
+            if (!this->parsePortSerdes(port.serdes.regn_bfm1n, field, value))
+            {
+                SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: parsePortSerdes(PORT_REGN_BFM1N) failed");
+                return false;
+            }
+        }
+        // SWSS_LOG_ERROR(" --- tomer --- Finishing new SI params configuration");
+
+
+
+
+
+
+
         else if (field == PORT_ROLE)
         {
             if (!this->parsePortRole(port, field, value))
@@ -909,6 +1024,8 @@ bool PortHelper::parsePortConfig(PortConfig &port) const
             SWSS_LOG_WARN("Unknown field(%s): skipping ...", field.c_str());
         }
     }
+
+    SWSS_LOG_ERROR(" --- tomer --- parsePortConfig: Leaving parsePortConfig():");
 
     return this->validatePortConfig(port);
 }
