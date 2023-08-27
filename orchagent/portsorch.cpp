@@ -297,6 +297,52 @@ static bool isValidPortTypeForLagMember(const Port& port)
     return (port.m_type == Port::Type::PHY || port.m_type == Port::Type::SYSTEM);
 }
 
+static std::string saiAttrToString(sai_port_serdes_attr_t attr)
+{
+    switch (attr)
+    {
+    case sai_port_serdes_attr_t::SAI_PORT_SERDES_ATTR_START:
+        return "SAI_PORT_SERDES_ATTR_START";
+    case sai_port_serdes_attr_t::SAI_PORT_SERDES_ATTR_PREEMPHASIS:
+        return "SAI_PORT_SERDES_ATTR_PREEMPHASIS";
+    case sai_port_serdes_attr_t::SAI_PORT_SERDES_ATTR_IDRIVER:
+        return "SAI_PORT_SERDES_ATTR_IDRIVER";
+    case sai_port_serdes_attr_t::SAI_PORT_SERDES_ATTR_IPREDRIVER:
+        return "SAI_PORT_SERDES_ATTR_IPREDRIVER";
+    case sai_port_serdes_attr_t::SAI_PORT_SERDES_ATTR_TX_FIR_PRE1:
+        return "SAI_PORT_SERDES_ATTR_TX_FIR_PRE1";
+    case sai_port_serdes_attr_t::SAI_PORT_SERDES_ATTR_TX_FIR_PRE2:
+        return "SAI_PORT_SERDES_ATTR_TX_FIR_PRE2";
+    case sai_port_serdes_attr_t::SAI_PORT_SERDES_ATTR_TX_FIR_PRE3:
+        return "SAI_PORT_SERDES_ATTR_TX_FIR_PRE3";
+    case sai_port_serdes_attr_t::SAI_PORT_SERDES_ATTR_TX_FIR_MAIN:
+        return "SAI_PORT_SERDES_ATTR_TX_FIR_MAIN";
+    case sai_port_serdes_attr_t::SAI_PORT_SERDES_ATTR_TX_FIR_POST1:
+        return "SAI_PORT_SERDES_ATTR_TX_FIR_POST1";
+    case sai_port_serdes_attr_t::SAI_PORT_SERDES_ATTR_TX_FIR_POST2:
+        return "SAI_PORT_SERDES_ATTR_TX_FIR_POST2";
+    case sai_port_serdes_attr_t::SAI_PORT_SERDES_ATTR_TX_FIR_POST3:
+        return "SAI_PORT_SERDES_ATTR_TX_FIR_POST3";
+    case sai_port_serdes_attr_t::SAI_PORT_SERDES_ATTR_TX_FIR_ATTN:
+        return "SAI_PORT_SERDES_ATTR_TX_FIR_ATTN";
+    case sai_port_serdes_attr_t::SAI_PORT_SERDES_ATTR_TX_PAM4_RATIO:
+        return "SAI_PORT_SERDES_ATTR_TX_PAM4_RATIO";
+    case sai_port_serdes_attr_t::SAI_PORT_SERDES_ATTR_TX_OUT_COMMON_MODE:
+        return "SAI_PORT_SERDES_ATTR_TX_OUT_COMMON_MODE";
+    case sai_port_serdes_attr_t::SAI_PORT_SERDES_ATTR_TX_PMOS_COMMON_MODE:
+        return "SAI_PORT_SERDES_ATTR_TX_PMOS_COMMON_MODE";
+    case sai_port_serdes_attr_t::SAI_PORT_SERDES_ATTR_TX_NMOS_COMMON_MODE:
+        return "SAI_PORT_SERDES_ATTR_TX_NMOS_COMMON_MODE";
+    case sai_port_serdes_attr_t::SAI_PORT_SERDES_ATTR_TX_PMOS_VLTG_REG:
+       return "SAI_PORT_SERDES_ATTR_TX_PMOS_VLTG_REG";
+    case sai_port_serdes_attr_t::SAI_PORT_SERDES_ATTR_TX_NMOS_VLTG_REG:
+        return "SAI_PORT_SERDES_ATTR_TX_NMOS_VLTG_REG";
+
+    default:
+        return "Unknown Attribute";
+    }
+}
+
 static void getPortSerdesAttr(PortSerdesAttrMap_t &map, const PortConfig &port)
 {
     if (port.serdes.preemphasis.is_set)
@@ -353,6 +399,39 @@ static void getPortSerdesAttr(PortSerdesAttrMap_t &map, const PortConfig &port)
     {
         map[SAI_PORT_SERDES_ATTR_TX_FIR_ATTN] = port.serdes.attn.value;
     }
+
+    if (port.serdes.ob_m2lp.is_set)
+    {
+    
+        map[SAI_PORT_SERDES_ATTR_TX_PAM4_RATIO] = port.serdes.ob_m2lp.value;
+    }
+
+    if (port.serdes.ob_alev_out.is_set)
+    {
+        map[SAI_PORT_SERDES_ATTR_TX_OUT_COMMON_MODE] = port.serdes.ob_alev_out.value;
+    }
+
+    if (port.serdes.obplev.is_set)
+    {
+        map[SAI_PORT_SERDES_ATTR_TX_PMOS_COMMON_MODE] = port.serdes.obplev.value;
+    }
+
+    if (port.serdes.obnlev.is_set)
+    {
+        map[SAI_PORT_SERDES_ATTR_TX_NMOS_COMMON_MODE] = port.serdes.obnlev.value;
+    }
+
+    if (port.serdes.regn_bfm1p.is_set)
+    {
+        map[SAI_PORT_SERDES_ATTR_TX_PMOS_VLTG_REG] = port.serdes.regn_bfm1p.value;
+    }
+
+    if (port.serdes.regn_bfm1n.is_set)
+    {
+        map[SAI_PORT_SERDES_ATTR_TX_NMOS_VLTG_REG] = port.serdes.regn_bfm1n.value;
+    }
+
+    
 }
 
 // Port OA ------------------------------------------------------------------------------------------------------------
@@ -7621,6 +7700,21 @@ bool PortsOrch::setPortSerdesAttribute(sai_object_id_t port_id, sai_object_id_t 
     port_serdes_attr.value.oid = port_id;
     attr_list.emplace_back(port_serdes_attr);
     SWSS_LOG_INFO("Creating serdes for port 0x%" PRIx64, port_id);
+
+    // TODO: Move these debug logs to a separate method or remove them
+    SWSS_LOG_DEBUG("Serdes data:");
+    for (const auto &entry : serdes_attr)
+    {
+        const sai_port_serdes_attr_t &key = entry.first;
+        const std::vector<uint32_t> &values = entry.second;
+
+        SWSS_LOG_DEBUG("Attribute: %s\n", (saiAttrToString(key)).c_str());
+        SWSS_LOG_DEBUG("Values:");
+        for (const auto &value : values)
+        {
+            SWSS_LOG_DEBUG(" %u ", value);
+        }
+    }
 
     for (auto it = serdes_attr.begin(); it != serdes_attr.end(); it++)
     {
