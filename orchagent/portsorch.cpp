@@ -7216,7 +7216,7 @@ void PortsOrch::doTask(NotificationConsumer &consumer)
 
     consumer.pop(op, data, values);
 
-    if (&consumer != m_portStatusNotificationConsumer || &consumer != m_portHostTxReadyNotificationConsumer)
+    if (&consumer != m_portStatusNotificationConsumer && &consumer != m_portHostTxReadyNotificationConsumer)
     {
         SWSS_LOG_ERROR("NOA inside doTask of notification - consumer is not valid");
         return;
