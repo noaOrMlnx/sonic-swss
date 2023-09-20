@@ -4473,6 +4473,8 @@ void PortsOrch::doTransceiverInfoTableTask(Consumer &consumer)
             if (m_pluggedModulesPort.find(alias) == m_pluggedModulesPort.end())
             {
                 m_pluggedModulesPort[alias] = m_portList[alias];
+                SWSS_LOG_ERROR("NOA setting host xt signal to false and then true - workaround to avoid fw bug");
+                setSaiHostTxSignal(m_pluggedModulesPort[alias], false);
                 SWSS_LOG_ERROR("NOA suppose to set host tx signal = true");  // TODO
                 setSaiHostTxSignal(m_pluggedModulesPort[alias], true);
                 SWSS_LOG_ERROR("NOA after setSaiHostTxSignal");
@@ -7216,7 +7218,7 @@ void PortsOrch::doTask(NotificationConsumer &consumer)
 
     consumer.pop(op, data, values);
 
-    if (&consumer != m_portStatusNotificationConsumer || &consumer != m_portHostTxReadyNotificationConsumer)
+    if (&consumer != m_portStatusNotificationConsumer && &consumer != m_portHostTxReadyNotificationConsumer)
     {
         SWSS_LOG_ERROR("NOA inside doTask of notification - consumer is not valid");
         return;
@@ -7274,7 +7276,7 @@ void PortsOrch::doTask(NotificationConsumer &consumer)
         // sai_port_host_tx_ready_status_t *host_tx_ready_status = SAI_NULL_OBJECT_ID;
         sai_port_host_tx_ready_status_t host_tx_ready_status;
 
-        sai_deserialize_port_host_tx_ready_ntf(data, port_id, switch_id, host_tx_ready_status);
+        sai_deserialize_port_host_tx_ready_ntf(data, switch_id, port_id, host_tx_ready_status);
 
         if (host_tx_ready_status == SAI_PORT_HOST_TX_READY_STATUS_READY)
         {
