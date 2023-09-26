@@ -98,7 +98,7 @@ public:
     } link_training; // Port link training
 
     struct {
-        
+
         struct {
             std::vector<std::uint32_t> value;
             bool is_set = false;
