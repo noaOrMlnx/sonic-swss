@@ -700,7 +700,7 @@ bool PortHelper::parsePortDescription(PortConfig &port, const std::string &field
 }
 
 bool PortHelper::parsePortConfig(PortConfig &port) const
-{   
+{
     SWSS_LOG_ENTER();
 
     for (const auto &cit : port.fieldValueMap)
