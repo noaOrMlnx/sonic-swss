@@ -7701,7 +7701,6 @@ bool PortsOrch::setPortSerdesAttribute(sai_object_id_t port_id, sai_object_id_t 
     attr_list.emplace_back(port_serdes_attr);
     SWSS_LOG_INFO("Creating serdes for port 0x%" PRIx64, port_id);
 
-    // TODO: Move these debug logs to a separate method or remove them
     SWSS_LOG_DEBUG("Serdes data:");
     for (const auto &entry : serdes_attr)
     {
