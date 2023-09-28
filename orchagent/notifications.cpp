@@ -33,7 +33,7 @@ void on_switch_shutdown_request(sai_object_id_t switch_id)
     exit(EXIT_FAILURE);
 }
 
-void on_port_host_tx_ready(sai_object_id_t port_id, sai_object_id_t switch_id, sai_port_host_tx_ready_status_t m_portHostTxReadyStatus)
+void on_port_host_tx_ready(sai_object_id_t switch_id, sai_object_id_t port_id, sai_port_host_tx_ready_status_t m_portHostTxReadyStatus)
 {
     // don't use this event handler, because it runs by libsairedis in a separate thread
     // which causes concurrency access to the DB

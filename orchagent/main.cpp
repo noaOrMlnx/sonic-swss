@@ -607,8 +607,6 @@ int main(int argc, char **argv)
         }
     }
 
-    SWSS_LOG_ERROR("NOA - before create switch");
-
     status = sai_switch_api->create_switch(&gSwitchId, (uint32_t)attrs.size(), attrs.data());
     if (status != SAI_STATUS_SUCCESS)
     {
