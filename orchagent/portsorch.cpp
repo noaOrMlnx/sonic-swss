@@ -4504,6 +4504,7 @@ void PortsOrch::doTransceiverInfoTableTask(Consumer &consumer)
 
 bool PortsOrch::setSaiHostTxSignal(Port port, bool enable)
 {
+    // SWSS_LOG_ERROR("NOA inside setSaiHostTxSignal 0x%" PRIx64, port.m_port_id);
     sai_attribute_t attr;
     attr.id = SAI_PORT_ATTR_HOST_TX_SIGNAL_ENABLE;
     attr.value.booldata = enable;
@@ -7849,6 +7850,13 @@ bool PortsOrch::initGearboxPort(Port &port)
             attr.value.booldata = m_gearboxPortMap[port.m_index].system_training;
             attrs.push_back(attr);
 
+            if (m_cmisModuleAsicSyncSupported)
+            {
+                attr.id = SAI_PORT_ATTR_HOST_TX_SIGNAL_ENABLE;
+                attr.value.booldata = false;
+                attrs.push_back(attr);
+            }
+
             status = sai_port_api->create_port(&systemPort, phyOid, static_cast<uint32_t>(attrs.size()), attrs.data());
             if (status != SAI_STATUS_SUCCESS)
             {
@@ -7936,6 +7944,13 @@ bool PortsOrch::initGearboxPort(Port &port)
             attr.id = SAI_PORT_ATTR_ADVERTISED_MEDIA_TYPE;
             attr.value.u32 = media_type_map[m_gearboxPortMap[port.m_index].line_adver_media_type];
             attrs.push_back(attr);
+
+            if (m_cmisModuleAsicSyncSupported)
+            {
+                attr.id = SAI_PORT_ATTR_HOST_TX_SIGNAL_ENABLE;
+                attr.value.booldata = false;
+                attrs.push_back(attr);
+            }
 
             status = sai_port_api->create_port(&linePort, phyOid, static_cast<uint32_t>(attrs.size()), attrs.data());
             if (status != SAI_STATUS_SUCCESS)
