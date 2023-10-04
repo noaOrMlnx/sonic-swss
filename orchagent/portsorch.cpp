@@ -301,8 +301,6 @@ static std::string saiAttrToString(sai_port_serdes_attr_t attr)
 {
     switch (attr)
     {
-    case sai_port_serdes_attr_t::SAI_PORT_SERDES_ATTR_START:
-        return "SAI_PORT_SERDES_ATTR_START";
     case sai_port_serdes_attr_t::SAI_PORT_SERDES_ATTR_PREEMPHASIS:
         return "SAI_PORT_SERDES_ATTR_PREEMPHASIS";
     case sai_port_serdes_attr_t::SAI_PORT_SERDES_ATTR_IDRIVER:
@@ -339,6 +337,7 @@ static std::string saiAttrToString(sai_port_serdes_attr_t attr)
         return "SAI_PORT_SERDES_ATTR_TX_NMOS_VLTG_REG";
 
     default:
+        SWSS_LOG_DEBUG("Unknown SerDes attribute found");
         return "Unknown Attribute";
     }
 }
@@ -7699,13 +7698,12 @@ bool PortsOrch::setPortSerdesAttribute(sai_object_id_t port_id, sai_object_id_t 
     port_serdes_attr.id = SAI_PORT_SERDES_ATTR_PORT_ID;
     port_serdes_attr.value.oid = port_id;
     attr_list.emplace_back(port_serdes_attr);
-    SWSS_LOG_INFO("Creating serdes for port 0x%" PRIx64, port_id);
+    SWSS_LOG_DEBUG("Creating serdes for port 0x%" PRIx64 " with the following SI parameters:", port_id);
 
-    SWSS_LOG_DEBUG("Serdes data:");
     for (const auto &entry : serdes_attr)
     {
-        const sai_port_serdes_attr_t &key = entry.first;
-        const std::vector<uint32_t> &values = entry.second;
+        const auto &key = entry.first;
+        const auto &values = entry.second;
 
         SWSS_LOG_DEBUG("Attribute: %s\n", (saiAttrToString(key)).c_str());
         SWSS_LOG_DEBUG("Values:");
