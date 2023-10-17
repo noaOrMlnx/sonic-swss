@@ -44,18 +44,8 @@ Orch::Orch(const vector<TableConnector>& tables)
     }
 }
 
-Orch::Orch(const vector<PriTablesConnector> &dbsTablesWithPri)
+Orch::Orch()
 {
-    for (auto it : dbsTablesWithPri)
-    {
-        auto db = it.first;
-        auto tablesWithPri = it.second;
-
-        for (const auto& table : tablesWithPri)
-        {
-            addConsumer(db, table.first, table.second);
-        }
-    }
 }
 
 vector<Selectable *> Orch::getSelectables()

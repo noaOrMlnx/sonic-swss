@@ -452,8 +452,6 @@ static void getPortSerdesAttr(PortSerdesAttrMap_t &map, const PortConfig &port)
  */
 
 
-// PortsOrch::PortsOrch(DBConnector *db, DBConnector *stateDb, vector<PriTablesConnector> &tables, DBConnector *chassisAppDb) :
-//         Orch(tables),
 PortsOrch::PortsOrch(DBConnector *db, DBConnector *stateDb, vector<table_name_with_pri_t> &tableNames, DBConnector *chassisAppDb) :
         Orch(db, tableNames),
         m_portStateTable(stateDb, STATE_PORT_TABLE_NAME),
@@ -472,7 +470,7 @@ PortsOrch::PortsOrch(DBConnector *db, DBConnector *stateDb, vector<table_name_wi
     m_counterTable = unique_ptr<Table>(new Table(m_counter_db.get(), COUNTERS_PORT_NAME_MAP));
     m_counterSysPortTable = unique_ptr<Table>(
                     new Table(m_counter_db.get(), COUNTERS_SYSTEM_PORT_NAME_MAP));
-    m_counterLagTable = uniqe_ptr<Table>(new Table(m_counter_db.get(), COUNTERS_LAG_NAME_MAP));
+    m_counterLagTable = unique_ptr<Table>(new Table(m_counter_db.get(), COUNTERS_LAG_NAME_MAP));
     FieldValueTuple tuple("", "");
     vector<FieldValueTuple> defaultLagFv;
     defaultLagFv.push_back(tuple);
@@ -597,6 +595,10 @@ PortsOrch::PortsOrch(DBConnector *db, DBConnector *stateDb, vector<table_name_wi
     // Query whether SAI supports Host Tx Signal and Host Tx Notification
 
     sai_attr_capability_t capability;
+
+    bool saiHwTxSignalSupported = false;
+    bool saiTxReadyNotifySupported = false;
+
     if (sai_query_attribute_capability(gSwitchId, SAI_OBJECT_TYPE_PORT,
                                             SAI_PORT_ATTR_HOST_TX_SIGNAL_ENABLE,
                                             &capability) == SAI_STATUS_SUCCESS)
@@ -604,7 +606,7 @@ PortsOrch::PortsOrch(DBConnector *db, DBConnector *stateDb, vector<table_name_wi
         if (capability.create_implemented == true)
         {
             SWSS_LOG_DEBUG("SAI_PORT_ATTR_HOST_TX_SIGNAL_ENABLE is true");
-            m_saiHwTxSignalSupported = true;
+            saiHwTxSignalSupported = true;
         }
     }
 
@@ -615,68 +617,66 @@ PortsOrch::PortsOrch(DBConnector *db, DBConnector *stateDb, vector<table_name_wi
         if (capability.create_implemented == true)
         {
             SWSS_LOG_DEBUG("SAI_SWITCH_ATTR_PORT_HOST_TX_READY_NOTIFY is true");
-            m_saiTxReadyNotifySupported = true;
+            saiTxReadyNotifySupported = true;
         }
     }
 
-    if (m_saiHwTxSignalSupported && m_saiTxReadyNotifySupported)
+    if (saiHwTxSignalSupported && saiTxReadyNotifySupported)
     {
         SWSS_LOG_DEBUG("m_cmisModuleAsicSyncSupported is true");
         m_cmisModuleAsicSyncSupported = true;
-        auto transceiverInfoTableName = STATE_TRANSCEIVER_INFO_TABLE_NAME;
-        Orch::addExecutor(new Consumer(new SubscriberStateTable(stateDb, transceiverInfoTableName, TableConsumable::DEFAULT_POP_BATCH_SIZE, 0), this, transceiverInfoTableName));
+        Orch::addExecutor(new Consumer(new SubscriberStateTable(stateDb, STATE_TRANSCEIVER_INFO_TABLE_NAME, TableConsumable::DEFAULT_POP_BATCH_SIZE, 0), this, STATE_TRANSCEIVER_INFO_TABLE_NAME));
     }
 
     if (gMySwitchType != "dpu")
     {
-        if (capability.create_implemented == true)
+        sai_attr_capability_t attr_cap;
+        if (sai_query_attribute_capability(gSwitchId, SAI_OBJECT_TYPE_PORT,
+                                           SAI_PORT_ATTR_AUTO_NEG_FEC_MODE_OVERRIDE,
+                                           &attr_cap) != SAI_STATUS_SUCCESS)
         {
-            SWSS_LOG_ERROR("NOA SAI_PORT_ATTR_HOST_TX_SIGNAL_ENABLE is true");
-            m_saiHwTxSignalSupported = true;
+            SWSS_LOG_NOTICE("Unable to query autoneg fec mode override");
         }
-    }
-
-    if (sai_query_attribute_capability(gSwitchId, SAI_OBJECT_TYPE_SWITCH,
-                                            SAI_SWITCH_ATTR_PORT_HOST_TX_READY_NOTIFY,
-                                            &capability) == SAI_STATUS_SUCCESS)
-    {
-        if (capability.create_implemented == true)
+        else if (attr_cap.set_implemented && attr_cap.create_implemented)
         {
-            SWSS_LOG_ERROR("NOA SAI_SWITCH_ATTR_PORT_HOST_TX_READY_NOTIFY is true");
-            m_saiTxReadyNotifySupported = true;
+            fec_override_sup = true;
         }
-    }
 
-    if (m_saiHwTxSignalSupported && m_saiTxReadyNotifySupported)
-    {
-        SWSS_LOG_ERROR("NOA m_cmisModuleAsicSyncSupported is true");
-        m_cmisModuleAsicSyncSupported = true;
-        auto transceiverInfoTableName = STATE_TRANSCEIVER_INFO_TABLE_NAME;
-        Orch::addExecutor(new Consumer(new SubscriberStateTable(stateDb, transceiverInfoTableName, TableConsumable::DEFAULT_POP_BATCH_SIZE, 0), this, transceiverInfoTableName));
-    }
-
-    /* Get default 1Q bridge and default VLAN */
-    sai_status_t status;
-    sai_attribute_t attr;
-    vector<sai_attribute_t> attrs;
-    attr.id = SAI_SWITCH_ATTR_DEFAULT_1Q_BRIDGE_ID;
-    attrs.push_back(attr);
-    attr.id = SAI_SWITCH_ATTR_DEFAULT_VLAN_ID;
-    attrs.push_back(attr);
-
-    status = sai_switch_api->get_switch_attribute(gSwitchId, (uint32_t)attrs.size(), attrs.data());
-    if (status != SAI_STATUS_SUCCESS)
-    {
-        SWSS_LOG_ERROR("Failed to get default 1Q bridge and/or default VLAN, rv:%d", status);
-        task_process_status handle_status = handleSaiGetStatus(SAI_API_SWITCH, status);
-        if (handle_status != task_process_status::task_success)
+        sai_attr_capability_t oper_fec_cap;
+        if (sai_query_attribute_capability(gSwitchId, SAI_OBJECT_TYPE_PORT,
+                                           SAI_PORT_ATTR_OPER_PORT_FEC_MODE, &oper_fec_cap)
+                                           != SAI_STATUS_SUCCESS)
         {
-            throw runtime_error("PortsOrch initialization failure");
+            SWSS_LOG_NOTICE("Unable to query capability support for oper fec mode");
         }
-    }
+        else if (oper_fec_cap.get_implemented)
+        {
+            oper_fec_sup = true;
+        }
 
-    m_default1QBridge = attrs[0].value.oid;
-    m_defaultVlan = attrs[1].value.oid;
+        /* Get default 1Q bridge and default VLAN */
+        sai_status_t status;
+        sai_attribute_t attr;
+        vector<sai_attribute_t> attrs;
+        attr.id = SAI_SWITCH_ATTR_DEFAULT_1Q_BRIDGE_ID;
+        attrs.push_back(attr);
+        attr.id = SAI_SWITCH_ATTR_DEFAULT_VLAN_ID;
+        attrs.push_back(attr);
+
+        status = sai_switch_api->get_switch_attribute(gSwitchId, (uint32_t)attrs.size(), attrs.data());
+        if (status != SAI_STATUS_SUCCESS)
+        {
+            SWSS_LOG_ERROR("Failed to get default 1Q bridge and/or default VLAN, rv:%d", status);
+            task_process_status handle_status = handleSaiGetStatus(SAI_API_SWITCH, status);
+            if (handle_status != task_process_status::task_success)
+            {
+                throw runtime_error("PortsOrch initialization failure");
+            }
+        }
+
+        m_default1QBridge = attrs[0].value.oid;
+        m_defaultVlan = attrs[1].value.oid;
+    }
 
     /* Get System ports */
     getSystemPorts();
@@ -1524,6 +1524,7 @@ bool PortsOrch::setPortAdminStatus(Port &port, bool state)
         SWSS_LOG_ERROR("Failed to set admin status %s for port %s."
                        " Setting host_tx_ready as false",
                        state ? "UP" : "DOWN", port.m_alias.c_str());
+
         if (!m_cmisModuleAsicSyncSupported)
         {
             m_portStateTable.hset(port.m_alias, "host_tx_ready", "false");
@@ -1554,7 +1555,7 @@ bool PortsOrch::setPortAdminStatus(Port &port, bool state)
     return true;
 }
 
-void PortsOrch::setHostTxReady(sai_object_id_t portId, std::string status)
+void PortsOrch::setHostTxReady(sai_object_id_t portId, const std::string &status)
 {
     Port p;
 
@@ -1602,6 +1603,7 @@ bool PortsOrch::getPortHostTxReady(const Port& port, bool &hostTxReadyVal)
     sai_status_t status = sai_port_api->get_port_attribute(port.m_port_id, 1, &attr);
     if (status != SAI_STATUS_SUCCESS)
     {
+        hostTxReadyVal = false;
         return false;
     }
 
@@ -4598,16 +4600,16 @@ void PortsOrch::doTransceiverInfoTableTask(Consumer &consumer)
             {
                 p = m_pluggedModulesPort[alias];
                 m_pluggedModulesPort.erase(alias);
+                SWSS_LOG_DEBUG("Setting host_tx_signal NOT allow for port %s", alias.c_str());
+                setSaiHostTxSignal(p, false);
             }
-            SWSS_LOG_DEBUG("Setting host_tx_signal NOT allow for port %s", alias.c_str());
-            setSaiHostTxSignal(p, false);
         }
 
         it = consumer.m_toSync.erase(it);
     }
 }
 
-bool PortsOrch::setSaiHostTxSignal(Port port, bool enable)
+bool PortsOrch::setSaiHostTxSignal(const Port &port, bool enable)
 {
     sai_attribute_t attr;
     attr.id = SAI_PORT_ATTR_HOST_TX_SIGNAL_ENABLE;
@@ -4616,7 +4618,7 @@ bool PortsOrch::setSaiHostTxSignal(Port port, bool enable)
 
     if (status != SAI_STATUS_SUCCESS)
     {
-        SWSS_LOG_ERROR("Could not set port {} attribute {}");
+        SWSS_LOG_ERROR("Could not setSAI_PORT_ATTR_HOST_TX_SIGNAL_ENABLE to port 0x%" PRIx64, port.m_port_id);
         return false;
     }
 
@@ -5021,7 +5023,7 @@ void PortsOrch::doTask(Consumer &consumer)
 
     string table_name = consumer.getTableName();
 
-    if (table_name == STATE_TRANSCEIVER_INFO_TABLE_NAME && m_cmisModuleAsicSyncSupported)
+    if (table_name == STATE_TRANSCEIVER_INFO_TABLE_NAME)
     {
         doTransceiverInfoTableTask(consumer);
     }
@@ -5339,11 +5341,8 @@ bool PortsOrch::initializePort(Port &port)
         }
         /* set value to state DB */
 
-        string hostTxReadyStr = "false";
-        if (hostTxReadyVal)
-        {
-            hostTxReadyStr = "true";
-        }
+        string hostTxReadyStr = hostTxReadyVal ? "true" : "false";
+
         SWSS_LOG_DEBUG("Received host_tx_ready current status: port_id: 0x%" PRIx64 " status: %s", port.m_port_id, hostTxReadyStr.c_str());
         m_portStateTable.hset(port.m_alias, "host_tx_ready", hostTxReadyStr);
     }
@@ -7379,14 +7378,7 @@ void PortsOrch::doTask(NotificationConsumer &consumer)
         sai_deserialize_port_host_tx_ready_ntf(data, switch_id, port_id, host_tx_ready_status);
         SWSS_LOG_DEBUG("Recieved host_tx_ready notification for port 0x%" PRIx64, port_id);
 
-        if (host_tx_ready_status == SAI_PORT_HOST_TX_READY_STATUS_READY)
-        {
-            setHostTxReady(port_id, "true");
-        }
-        else if (host_tx_ready_status == SAI_PORT_HOST_TX_READY_STATUS_NOT_READY)
-        {
-            setHostTxReady(port_id, "false");
-        }
+        setHostTxReady(port_id, host_tx_ready_status == SAI_PORT_HOST_TX_READY_STATUS_READY ? "true" : "false");
 
         sai_deserialize_free_port_host_tx_ready_ntf(host_tx_ready_status);
     }
