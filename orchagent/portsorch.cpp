@@ -513,7 +513,7 @@ PortsOrch::PortsOrch(DBConnector *db, DBConnector *stateDb, vector<table_name_wi
     {
         if (capability.create_implemented == true)
         {
-            SWSS_LOG_DEBUG("SAI_PORT_ATTR_HOST_TX_SIGNAL_ENABLE is true");
+            SWSS_LOG_ERROR("SAI_PORT_ATTR_HOST_TX_SIGNAL_ENABLE is true");
             saiHwTxSignalSupported = true;
         }
     }
@@ -524,14 +524,14 @@ PortsOrch::PortsOrch(DBConnector *db, DBConnector *stateDb, vector<table_name_wi
     {
         if (capability.create_implemented == true)
         {
-            SWSS_LOG_DEBUG("SAI_SWITCH_ATTR_PORT_HOST_TX_READY_NOTIFY is true");
+            SWSS_LOG_ERROR("SAI_SWITCH_ATTR_PORT_HOST_TX_READY_NOTIFY is true");
             saiTxReadyNotifySupported = true;
         }
     }
 
     if (saiHwTxSignalSupported && saiTxReadyNotifySupported)
     {
-        SWSS_LOG_DEBUG("m_cmisModuleAsicSyncSupported is true");
+        SWSS_LOG_ERROR("m_cmisModuleAsicSyncSupported is true");
         m_cmisModuleAsicSyncSupported = true;
         Orch::addExecutor(new Consumer(new SubscriberStateTable(stateDb, STATE_TRANSCEIVER_INFO_TABLE_NAME, TableConsumable::DEFAULT_POP_BATCH_SIZE, 0), this, STATE_TRANSCEIVER_INFO_TABLE_NAME));
     }
@@ -4474,26 +4474,26 @@ void PortsOrch::doTransceiverInfoTableTask(Consumer &consumer)
 
         if (op == SET_COMMAND)
         {
-            SWSS_LOG_DEBUG("TRANSCEIVER_INFO table has changed - SET command for port %s", alias.c_str());
+            SWSS_LOG_ERROR("TRANSCEIVER_INFO table has changed - SET command for port %s", alias.c_str());
 
             if (m_pluggedModulesPort.find(alias) == m_pluggedModulesPort.end())
             {
                 m_pluggedModulesPort[alias] = m_portList[alias];
 
-                SWSS_LOG_DEBUG("Setting host_tx_signal allow for port %s", alias.c_str());
+                SWSS_LOG_ERROR("Setting host_tx_signal allow for port %s", alias.c_str());
                 setSaiHostTxSignal(m_pluggedModulesPort[alias], true);
             }
         }
         else if (op == DEL_COMMAND)
         {
-            SWSS_LOG_DEBUG("TRANSCEIVER_INFO table has changed - DEL command for port %s", alias.c_str());
+            SWSS_LOG_ERROR("TRANSCEIVER_INFO table has changed - DEL command for port %s", alias.c_str());
 
             Port p;
             if (m_pluggedModulesPort.find(alias) != m_pluggedModulesPort.end())
             {
                 p = m_pluggedModulesPort[alias];
                 m_pluggedModulesPort.erase(alias);
-                SWSS_LOG_DEBUG("Setting host_tx_signal NOT allow for port %s", alias.c_str());
+                SWSS_LOG_ERROR("Setting host_tx_signal NOT allow for port %s", alias.c_str());
                 setSaiHostTxSignal(p, false);
             }
         }
@@ -5239,7 +5239,7 @@ bool PortsOrch::initializePort(Port &port)
 
         string hostTxReadyStr = hostTxReadyVal ? "true" : "false";
 
-        SWSS_LOG_DEBUG("Received host_tx_ready current status: port_id: 0x%" PRIx64 " status: %s", port.m_port_id, hostTxReadyStr.c_str());
+        SWSS_LOG_ERROR("Received host_tx_ready current status: port_id: 0x%" PRIx64 " status: %s", port.m_port_id, hostTxReadyStr.c_str());
         m_portStateTable.hset(port.m_alias, "host_tx_ready", hostTxReadyStr);
     }
 
@@ -7360,7 +7360,7 @@ void PortsOrch::doTask(NotificationConsumer &consumer)
         sai_port_host_tx_ready_status_t host_tx_ready_status;
 
         sai_deserialize_port_host_tx_ready_ntf(data, switch_id, port_id, host_tx_ready_status);
-        SWSS_LOG_DEBUG("Recieved host_tx_ready notification for port 0x%" PRIx64, port_id);
+        SWSS_LOG_ERROR("Recieved host_tx_ready notification for port 0x%" PRIx64, port_id);
 
         setHostTxReady(port_id, host_tx_ready_status == SAI_PORT_HOST_TX_READY_STATUS_READY ? "true" : "false");
 
