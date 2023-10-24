@@ -453,6 +453,11 @@ int main(int argc, char **argv)
     Recorder::Instance().respub.setFileName(responsepublisher_rec_filename);
     Recorder::Instance().respub.startRec(false);
 
+    // Instantiate database connectors
+    DBConnector appl_db("APPL_DB", 0);
+    DBConnector config_db("CONFIG_DB", 0);
+    DBConnector state_db("STATE_DB", 0);
+
     sai_attribute_t attr;
     vector<sai_attribute_t> attrs;
 
@@ -605,7 +610,6 @@ int main(int argc, char **argv)
         SWSS_LOG_ERROR("Failed to create a switch, rv:%d", status);
         handleSaiFailure(true);
     }
-    SWSS_LOG_ERROR("NOA - after create switch");
     SWSS_LOG_NOTICE("Create a switch, id:%" PRIu64, gSwitchId);
 
     if (gMySwitchType == "voq" || gMySwitchType == "fabric" || gMySwitchType == "chassis-packet")
