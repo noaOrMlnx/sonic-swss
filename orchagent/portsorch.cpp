@@ -424,7 +424,7 @@ static bool isPathTracingSupported()
     attr.value.s32list.list = switchCapabilities.data();
 
     bool is_tam_supported = false;
-    auto status = sai_switch_api->get_switch_attribute(gSwitchId, 1, &attr);
+    sai_status_t status = sai_switch_api->get_switch_attribute(gSwitchId, 1, &attr);
     if (status == SAI_STATUS_SUCCESS)
     {
         for (std::uint32_t i = 0; i < attr.value.s32list.count; i++)
@@ -440,7 +440,8 @@ static bool isPathTracingSupported()
             }
         }
     }
-    else if (status == SAI_STATUS_ATTR_NOT_IMPLEMENTED_0)
+    else if (SAI_STATUS_IS_ATTR_NOT_SUPPORTED(status) || SAI_STATUS_IS_ATTR_NOT_IMPLEMENTED(status)
+             || status ==  SAI_STATUS_NOT_SUPPORTED || status == SAI_STATUS_NOT_IMPLEMENTED)
     {
         SWSS_LOG_INFO("Querying OBJECT_TYPE_LIST is not supported on this platform");
         return false;
@@ -448,7 +449,7 @@ static bool isPathTracingSupported()
     else 
     {
         SWSS_LOG_ERROR(
-            "Failed to get a list of supported switch capabilities. Error=%d", status
+            "Failed to get a list of supported switch capabilities. Error= 0x%x", status
         );
         return false;
     }
